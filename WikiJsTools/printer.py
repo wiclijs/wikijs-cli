@@ -119,7 +119,10 @@ def remove_style(message: str) -> None:
 
 ####################################################################################################
 
-html_escape = html.escape
+# html_escape = html.escape
+
+def html_escape(text: str) -> str:
+    return str(text).replace('<', '&lt;').replace('>', '&gt;')
 
 ####################################################################################################
 
