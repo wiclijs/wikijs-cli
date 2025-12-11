@@ -597,7 +597,7 @@ class Cli:
         _ = f"<green>{page.path_str}</green> @{page.locale}{LINESEP}"
         _ += f"  <blue>{page.title}</blue>{LINESEP}"
         self.print(_)
-        response = self._api.create_page(page)
+        response = page.create()
         self.print(f"<red>{response.message}</red>")
 
     ##############################################

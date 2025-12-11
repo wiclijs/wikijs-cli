@@ -458,6 +458,9 @@ class Page(BasePage):
 
     ##############################################
 
+    def create(self, *args, **kwargs) -> 'ResponseResult':
+        return self.api.create_page(self, *args, **kwargs)
+
     def update(self, *args, **kwargs) -> 'ResponseResult':
         return self.api.update_page(self, *args, **kwargs)
 
