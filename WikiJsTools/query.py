@@ -351,6 +351,7 @@ mutation (
       }
       page {
         id
+        createdAt
         updatedAt
       }
 }}}
