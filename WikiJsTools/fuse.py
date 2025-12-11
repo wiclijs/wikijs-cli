@@ -6,11 +6,15 @@
 #
 ####################################################################################################
 
+####################################################################################################
+#
 # Emacs : (setq create-lockfiles nil)
-
+#
 # Somebody scans the whole file hierarchy
 # Dolphin calls getxattr
-# Editors attempt to write and read a lot of backup files... 
+# Editors attempt to write and read a lot of backup files...
+#
+####################################################################################################
 
 ####################################################################################################
 
@@ -37,16 +41,55 @@ def mount(api: WikiJsApi, path: str) -> None:
 
 ####################################################################################################
 
+class VirtualDirectory:
+
+    ##############################################
+
+    def __init__(self, wfuse: 'WikiJsFuse', path: str, mode: int=0o755) -> None:
+        self._wfuse = wfuse
+        path = str(path)
+        self._path = PurePosixPath(path)
+        # self._fd = int(fd)
+
+        # now = time()
+        now = self._wfuse._mount_time
+        self._stat = dict(
+            st_mode=(S_IFDIR | mode),
+            st_ctime=now,
+            st_mtime=now,
+            st_atime=now,
+            st_nlink=2,
+        )
+
+    ##############################################
+
+    # @property
+    # def fd(self) -> int:
+    #     return self._fd
+
+    @property
+    def path(self) -> PurePosixPath:
+        return self._path
+
+    @property
+    def path_str(self) -> str:
+        return str(self._path)
+
+    @property
+    def stat(self) -> dict:
+        return self._stat
+
+####################################################################################################
+
 class VirtualFile:
 
     ##############################################
 
-    def __init__(self, wfuse: 'WikiJsFuse', path: str, fd: int, create: bool) -> None:
+    def __init__(self, wfuse: 'WikiJsFuse', path: str, fd: int, create: bool, mode: int = 0o644) -> None:
         self._wfuse = wfuse
         path = str(path)
         self._path = PurePosixPath(path)
         self._fd = int(fd)
-        self._mode = 644
         self._created = create
         if not create:
             self._page = self._wfuse._api.page(path)
@@ -56,7 +99,7 @@ class VirtualFile:
             self._data = b''
             now = time()
             self._stat = dict(
-                st_mode=(S_IFREG | 0o644),
+                st_mode=(S_IFREG | mode),
                 st_ctime=now,
                 st_mtime=now,
                 st_atime=now,
@@ -67,9 +110,9 @@ class VirtualFile:
     ##############################################
 
     @classmethod
-    def page_stat(self, page):
+    def page_stat(self, page) -> None:
         return dict(
-            st_mode=(S_IFREG | 0o644),
+            st_mode=(S_IFREG | 0o644),   # Fixme: mode
             st_ctime=page.created_at.timestamp(),
             st_mtime=page.updated_at.timestamp(),
             # st_atime=mount_time,
@@ -99,6 +142,10 @@ class VirtualFile:
     @property
     def path(self) -> PurePosixPath:
         return self._path
+
+    @property
+    def name(self) -> str:
+        return self._path.name
 
     @property
     def path_str(self) -> str:
@@ -142,7 +189,7 @@ class VirtualFile:
         # print(tail)
         file_data = head + data + tail
         self._data = file_data
-        if self.is_page:
+        if self._page or file_data.startswith(b'title:'):
             print(f"Write on wiki {self.path_str}")
             _ = file_data.decode('utf8')
             RULE = '~'*100
@@ -150,7 +197,11 @@ class VirtualFile:
             print(_)
             print(RULE)
             page = Page.import_(_, self._api)
-            page.update()
+            # Fixme: check path match
+            if page.id is not None:
+                page.update()
+            else:
+                page.create()
             self._page = page
             self._stat = self.page_stat(page)
         else:
@@ -168,7 +219,9 @@ class WikiJsFuse(LoggingMixIn, Operations):
     def __init__(self, api: WikiJsApi) -> None:
         self._api = api
         self._mount_time = time()
-        self._file_by_path = {}
+        self._file_by_path = {
+            '/': VirtualDirectory(self, '/')
+        }
         self._file_by_fd = {}
         self.data = defaultdict(bytes)
         self._last_fd = 0
@@ -197,7 +250,7 @@ class WikiJsFuse(LoggingMixIn, Operations):
     #     for item in items:
     #         print(item.id, item.path, item.isFolder)
 
-    def _query_folder(self, path: PurePosixPath):
+    def _query_folder(self, path: PurePosixPath) -> None:
         cache = []
         for i, part in enumerate(path.parts):
             if i == 0:
@@ -211,20 +264,21 @@ class WikiJsFuse(LoggingMixIn, Operations):
 
     ##############################################
 
-    def chmod(self, path: str, mode: int):
+    def chmod(self, path: str, mode: int) -> None:
         # self._files[path]['st_mode'] &= 0o770000
         # self._files[path]['st_mode'] |= mode
         return 0
 
     ##############################################
 
-    def chown(self, path: str, uid, gid):
+    def chown(self, path: str, uid, gid) -> None:
         # self._files[path]['st_uid'] = uid
         # self._files[path]['st_gid'] = gid
         pass
 
     ##############################################
 
+    # Fixme: unused
     def create(self, path: str, mode: int) -> int:
         print('create', path, mode)
         file = self.new_fd(path, create=True)
@@ -232,7 +286,7 @@ class WikiJsFuse(LoggingMixIn, Operations):
 
     ##############################################
 
-    def getattr(self, path: str, fd: int = None):
+    def getattr(self, path: str, fd: int = None) -> None:
         """Get file attributes. Similar to stat()"""
         print(f"getattr '{path}' fd={fd}")
         # if path not in self._files:
@@ -242,22 +296,14 @@ class WikiJsFuse(LoggingMixIn, Operations):
             return self._file_by_fd[fd].stat
 
         mount_time = self._mount_time
-        if path == '/':
-            return dict(
-                st_mode=(S_IFDIR | 0o755),
-                st_ctime=mount_time,
-                st_mtime=mount_time,
-                st_atime=mount_time,
-                st_nlink=2,
-            )
-        elif path in self._file_by_path:
+        if path in self._file_by_path:
             return self._file_by_path[path].stat
         else:
             path = PurePosixPath(path)
-            cache = self._query_folder(path.parent)
-            # print(f"Lookup {path}")
-            # print(f"Cache {cache[-1]}")
             try:
+                cache = self._query_folder(path.parent)
+                # print(f"Lookup {path}")
+                # print(f"Cache {cache[-1]}")
                 item = cache[-1][path.name]
             except KeyError:
                 raise FuseOSError(ENOENT)
@@ -291,38 +337,37 @@ class WikiJsFuse(LoggingMixIn, Operations):
 
     ##############################################
 
-    def listxattr(self, path: str):
+    def listxattr(self, path: str) -> None:
         # attrs = self._files[path].get('attrs', {})
         # return attrs.keys()
         return ()
 
     ##############################################
 
-    def mkdir(self, path: str, mode: int):
-        # self._files[path] = dict(
-        #     st_mode=(S_IFDIR | mode),
-        #     st_nlink=2,
-        #     st_size=0,
-        #     st_ctime=time(),
-        #     st_mtime=time(),
-        #     st_atime=time(),
-        # )
-        # self._files['/']['st_nlink'] += 1
-        pass
+    def mkdir(self, path: str, mode: int) -> None:
+        print(f"mkdir '{path}' {mode}")
+        directory = VirtualDirectory(self, path, mode)
+        self._file_by_path[path] = directory
+        try:
+            parent = self._file_by_path[str(directory.path.parent)]
+            parent.stat['st_nlink'] += 1
+        except KeyError:
+            # Fixme: wiki folder
+            pass
 
     ##############################################
 
     def open(self, path: str, flags: int) -> int:
-        print('open', path, flags)
+        print(f"open '{path}' {flags}")
         file = self._file_by_path.get(path, None)
         if file is None:
-            file = self.new_fd(path, create=False)
+            file = self.new_fd(path, create=create)
         return file.fd
 
     ##############################################
 
     def read(self, path: str, size: int, offset: int, fd: int) -> bytes:
-        print('read', path, size, offset, fd)
+        print(f"read '{path}' s={size} o={offset} fd={fd}")
         file = self._file_by_fd[fd]
         return file.read(size, offset)
 
@@ -331,23 +376,31 @@ class WikiJsFuse(LoggingMixIn, Operations):
     def readdir(self, path: str, fd: int) -> list[str]:
         print(f"readdir '{path}' fd={fd}")
         path = PurePosixPath(path)
-        cache = self._query_folder(path)
         in_memory_file = []
-        for file in self._file_by_fd.values():
+        for file in self._file_by_path.values():
             fpath = file.path
-            if file.created and fpath.parent == path:
+            if file.path_str == '/':
+                continue
+            if (isinstance(file, VirtualDirectory) or file.created) and fpath.parent == path:
                 in_memory_file.append(fpath.name)
-        return ['.', '..'] + in_memory_file + list(cache[-1].keys())
+        entries = ['.', '..'] + in_memory_file
+        try:
+            cache = self._query_folder(path)
+            entries += list(cache[-1].keys())
+        except KeyError:
+            pass
+        # print(entries)
+        return entries
 
     ##############################################
 
-    def readlink(self, path: str):
-        print('readlink', path)
+    def readlink(self, path: str) -> None:
+        print(f"readlink '{path}'")
         return self.data[path]
 
     ##############################################
 
-    def removexattr(self, path: str, name):
+    def removexattr(self, path: str, name) -> None:
         # attrs = self._files[path].get('attrs', {})
         # try:
         #     del attrs[name]
@@ -357,14 +410,14 @@ class WikiJsFuse(LoggingMixIn, Operations):
 
     ##############################################
 
-    def rename(self, old, new):
+    def rename(self, old, new) -> None:
         # self.data[new] = self.data.pop(old)
         # self._files[new] = self._files.pop(old)
         pass
 
     ##############################################
 
-    def rmdir(self, path: str):
+    def rmdir(self, path: str) -> None:
         # with multiple level support, need to raise ENOTEMPTY if contains any files
         # self._files.pop(path)
         # self._files['/']['st_nlink'] -= 1
@@ -372,7 +425,7 @@ class WikiJsFuse(LoggingMixIn, Operations):
 
     ##############################################
 
-    def setxattr(self, path: str, name: str, value: str, options, position: int = 0):
+    def setxattr(self, path: str, name: str, value: str, options, position: int = 0) -> None:
         # Ignore options
         # attrs = self._files[path].setdefault('attrs', {})
         # attrs[name] = value
@@ -380,12 +433,12 @@ class WikiJsFuse(LoggingMixIn, Operations):
 
     ##############################################
 
-    def statfs(self, path: str):
+    def statfs(self, path: str) -> None:
         return dict(f_bsize=512, f_blocks=4096, f_bavail=2048)
 
     ##############################################
 
-    def symlink(self, target: str, source: str):
+    def symlink(self, target: str, source: str) -> None:
         print('symlink', target, source)
         # self._files[target] = dict(
         #     st_mode=(S_IFLNK | 0o777),
@@ -412,7 +465,7 @@ class WikiJsFuse(LoggingMixIn, Operations):
 
     ##############################################
 
-    def utimens(self, path: str, times=None):
+    def utimens(self, path: str, times=None) -> None:
         # now = time()
         # atime, mtime = times if times else (now, now)
         # self._files[path]['st_atime'] = atime
