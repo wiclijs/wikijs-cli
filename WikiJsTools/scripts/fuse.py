@@ -18,6 +18,7 @@ import logging
 from WikiJsTools.fuse import mount
 from WikiJsTools.WikiJsApi import WikiJsApi
 from WikiJsTools import config as Config
+from WikiJsTools import logging as Logging
 
 ####################################################################################################
 
@@ -35,8 +36,13 @@ def main():
         Config.DEBUG = True
 
     config = Config.load_config()
+    logger = Logging.setup_logging(
+        config_file=config.LOGGING_CONFIG_FILE,
+        level= 'DEBUG' if args.debug else 'INFO',
+    )
+    logger.info("Start...")
+    level = logging.DEBUG
+
     api = WikiJsApi(api_url=config.API_URL, api_key=config.API_KEY)
-    # level = logging.DEBUG
-    level = logging.INFO
-    logging.basicConfig(level=level)
+
     mount(api, args.mount)

@@ -17,6 +17,7 @@ import argparse
 from WikiJsTools.Cli import Cli
 from WikiJsTools.WikiJsApi import WikiJsApi
 from WikiJsTools import config as Config
+from WikiJsTools import logging as Logging
 
 ####################################################################################################
 
@@ -31,8 +32,14 @@ def main():
 
     if args.debug:
         Config.DEBUG = True
-
     config = Config.load_config()
+    logger = Logging.setup_logging(
+        config_file=config.LOGGING_CONFIG_FILE,
+        level= 'DEBUG' if args.debug else 'INFO',
+    )
+    logger.info("Start...")
+
     api = WikiJsApi(api_url=config.API_URL, api_key=config.API_KEY)
+
     cli = Cli(api)
     cli.cli(query='')

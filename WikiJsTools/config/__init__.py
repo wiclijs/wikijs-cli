@@ -18,8 +18,9 @@ __all__ = [
 from dataclasses import dataclass
 from pathlib import Path
 
-from yaml import load
-from yaml import Loader
+import yaml
+
+from .os import OsFactory
 
 ####################################################################################################
 
@@ -30,16 +31,21 @@ CLI_HISTORY_PATH = CONFIG_PATH.joinpath('cli_history')
 # DEBUG = True
 DEBUG = False
 
+OS = OsFactory()
+
+DEFAULT_LOOGING_CONFIG_FILE =  Path(__file__).parent.joinpath('logging.yml')
+
 ####################################################################################################
 
 @dataclass
 class Config:
     API_URL: str
     API_KEY: str
+    LOGGING_CONFIG_FILE: str = DEFAULT_LOOGING_CONFIG_FILE
 
 ####################################################################################################
 
 def load_config(path: Path | str = CONFIG_YAML_PATH) -> Config:
-    with open(path) as fh:
-        _ = load(fh, Loader=Loader)
+    _ = Path(path).read_text()
+    _ = yaml.load(_, Loader=yaml.SafeLoader)
     return Config(**_)

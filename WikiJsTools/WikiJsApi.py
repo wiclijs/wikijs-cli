@@ -829,7 +829,7 @@ class WikiJsApi:
     # Fixme: do we need is_generator
     def cache(cache_name: str):
         def decorator(func):
-            print('Cache func', func)
+            # print('Cache func', func)
             @wraps(func)
             def wrapper(self, *args, **kwargs):
                 cache = kwargs.pop('cache', True)
@@ -842,7 +842,7 @@ class WikiJsApi:
                     # if value is not None:
                     #     printc(f'Found in cache {cache_key}')
                 if value is None:
-                    print(f'Call {func}')   # Fixme: <>
+                    # print(f'Call {func}')   # Fixme: <>
                     value = func(self, *args, **kwargs)
                     # We cannot mix return and yield in a function !
                     is_generator = isinstance(value, types.GeneratorType)

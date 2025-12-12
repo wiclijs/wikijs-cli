@@ -29,10 +29,18 @@ from errno import ENOENT, ENODATA
 from pathlib import Path, PurePosixPath
 from stat import S_IFDIR, S_IFLNK, S_IFREG
 from time import time
+import logging
+import os
 
 from fuse import FUSE, FuseOSError, Operations, LoggingMixIn
 
 from .WikiJsApi import WikiJsApi, ApiError, Page
+
+####################################################################################################
+
+LINESEP = os.linesep
+
+_module_logger = logging.getLogger(__name__)
 
 ####################################################################################################
 
@@ -42,6 +50,8 @@ def mount(api: WikiJsApi, path: str) -> None:
 ####################################################################################################
 
 class VirtualDirectory:
+
+    _logger = _module_logger.getChild('VirtualDirectory')
 
     ##############################################
 
@@ -82,6 +92,8 @@ class VirtualDirectory:
 ####################################################################################################
 
 class VirtualFile:
+
+    _logger = _module_logger.getChild('VirtualFile')
 
     ##############################################
 
@@ -202,13 +214,11 @@ class VirtualFile:
         file_data = head + data + tail
         self._data = file_data
         if self.is_wiki_page:
-            print(f"Write on wiki {self.path_str}")
-            _ = file_data.decode('utf8')
+            data = file_data.decode('utf8')
             RULE = '~'*100
-            print(RULE)
-            print(_)
-            print(RULE)
-            page = Page.import_(_, self._api)
+            _ = LINESEP.join(('', RULE, data, RULE))
+            self._logger.info(f"Write on wiki {self.path_str}{_}")
+            page = Page.import_(data, self._api)
             # Fixme: check path match
             if page.id is not None:
                 page.update()
@@ -217,6 +227,7 @@ class VirtualFile:
             self._page = page
             self._stat = self.page_stat(page)
         else:
+            self._logger.info(f"Write virtual file '{self.path_str}'")
             self._stat['st_size'] = len(file_data)
         return len(data)
 
@@ -225,6 +236,8 @@ class VirtualFile:
 class WikiJsFuse(LoggingMixIn, Operations):
 
     # https://libfuse.github.io/doxygen/structfuse__operations.html
+
+    _logger = _module_logger.getChild('WikiJsFuse')
 
     ##############################################
 
@@ -290,9 +303,8 @@ class WikiJsFuse(LoggingMixIn, Operations):
 
     ##############################################
 
-    # Fixme: unused
     def create(self, path: str, mode: int) -> int:
-        print('create', path, mode)
+        self._logger.info(f"create '{path}' mode={mode}")
         file = self.new_fd(path, create=True)
         return file.fd
 
@@ -300,7 +312,7 @@ class WikiJsFuse(LoggingMixIn, Operations):
 
     def getattr(self, path: str, fd: int = None) -> None:
         """Get file attributes. Similar to stat()"""
-        print(f"getattr '{path}' fd={fd}")
+        self._logger.info(f"getattr '{path}' fd={fd}")
         # if path not in self._files:
         #     raise FuseOSError(ENOENT)
         # return self._files[path]
@@ -357,7 +369,7 @@ class WikiJsFuse(LoggingMixIn, Operations):
     ##############################################
 
     def mkdir(self, path: str, mode: int) -> None:
-        print(f"mkdir '{path}' {mode}")
+        self._logger.info(f"mkdir '{path}' {mode}")
         directory = VirtualDirectory(self, path, mode)
         self._file_by_path[path] = directory
         try:
@@ -370,23 +382,24 @@ class WikiJsFuse(LoggingMixIn, Operations):
     ##############################################
 
     def open(self, path: str, flags: int) -> int:
-        print(f"open '{path}' {flags}")
+        # See create
+        self._logger.info(f"open '{path}' {flags}")
         file = self._file_by_path.get(path, None)
         if file is None:
-            file = self.new_fd(path, create=create)
+            file = self.new_fd(path, create=False)
         return file.fd
 
     ##############################################
 
     def read(self, path: str, size: int, offset: int, fd: int) -> bytes:
-        print(f"read '{path}' s={size} o={offset} fd={fd}")
+        self._logger.info(f"read '{path}' s={size} o={offset} fd={fd}")
         file = self._file_by_fd[fd]
         return file.read(size, offset)
 
     ##############################################
 
     def readdir(self, path: str, fd: int) -> list[str]:
-        print(f"readdir '{path}' fd={fd}")
+        self._logger.info(f"readdir '{path}' fd={fd}")
         path = PurePosixPath(path)
         in_memory_file = []
         for file in self._file_by_path.values():
@@ -407,7 +420,7 @@ class WikiJsFuse(LoggingMixIn, Operations):
     ##############################################
 
     def readlink(self, path: str) -> None:
-        print(f"readlink '{path}'")
+        self._logger.info(f"readlink '{path}'")
         return self.data[path]
 
     ##############################################
@@ -451,7 +464,7 @@ class WikiJsFuse(LoggingMixIn, Operations):
     ##############################################
 
     def symlink(self, target: str, source: str) -> None:
-        print('symlink', target, source)
+        self._logger.info(f"symlink {target} {source}")
         # self._files[target] = dict(
         #     st_mode=(S_IFLNK | 0o777),
         #     st_nlink=1,
@@ -462,7 +475,7 @@ class WikiJsFuse(LoggingMixIn, Operations):
     ##############################################
 
     def truncate(self, path: str, length: int, fd: int = None) -> None:
-        print(f"truncate '{path}' #{length} fd={fd}")
+        self._logger.info(f"truncate '{path}' #{length} fd={fd}")
         if fd is not None:
             file = self._file_by_fd[fd]
         else:
@@ -487,6 +500,7 @@ class WikiJsFuse(LoggingMixIn, Operations):
     ##############################################
 
     def write(self, path: str, data: bytes, offset: int, fd: int) -> int:
-        print(f"Write '{path}' @{offset} fd={fd} {data}")
+        # self._logger.debug(f"Write '{path}' @{offset} fd={fd} {data}")
+        self._logger.info(f"Write '{path}' @{offset} fd={fd}")
         file = self._file_by_fd[fd]
         return file.write(data, offset)
