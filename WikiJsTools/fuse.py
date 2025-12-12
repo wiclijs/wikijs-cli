@@ -96,7 +96,7 @@ class VirtualFile:
             self._stat = self.page_stat(self._page)
             self._data = self._page.bytes_data
         else:
-            self._data = b''
+            self._page = None
             now = time()
             self._stat = dict(
                 st_mode=(S_IFREG | mode),
@@ -106,6 +106,7 @@ class VirtualFile:
                 st_nlink=1,
                 st_size=0,
             )
+            self._data = b''
 
     ##############################################
 
@@ -165,8 +166,8 @@ class VirtualFile:
     ##############################################
 
     @property
-    def _is_wiki_page(self) -> bool:
-        if self._page:
+    def is_wiki_page(self) -> bool:
+        if self._page is not None:
             return True
         filename = self.name
         if filename[0] in '.#' or filename[-1] in '~#':
