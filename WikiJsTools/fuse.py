@@ -164,6 +164,17 @@ class VirtualFile:
 
     ##############################################
 
+    @property
+    def _is_wiki_page(self) -> bool:
+        if self._page:
+            return True
+        filename = self.name
+        if filename[0] in '.#' or filename[-1] in '~#':
+            return False
+        return self._data.startswith(b'title:')
+
+    ##############################################
+
     def read(self, size: int, offset: int) -> bytes:
         return self.data[offset:offset + size]
 
@@ -189,7 +200,7 @@ class VirtualFile:
         # print(tail)
         file_data = head + data + tail
         self._data = file_data
-        if self._page or file_data.startswith(b'title:'):
+        if self.is_wiki_page:
             print(f"Write on wiki {self.path_str}")
             _ = file_data.decode('utf8')
             RULE = '~'*100
