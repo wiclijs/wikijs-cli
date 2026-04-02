@@ -23,7 +23,7 @@ class Node:
 
     def __init__(self, name: str = '') -> None:
         self._name = str(name)
-        self._parent = None
+        self._parent: Node | None = None
         self._childs = {}
 
     ##############################################
@@ -50,7 +50,7 @@ class Node:
 
     @property
     def is_folder(self) -> bool:
-        return self._childs
+        return bool(self._childs)
 
     @property
     def is_leaf(self) -> bool:

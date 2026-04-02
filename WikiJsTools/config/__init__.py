@@ -10,7 +10,7 @@ __all__ = [
     'CONFIG_PATH',
     'CONFIG_YAML_PATH',
     'CLI_HISTORY_PATH',
-    'load_config', 
+    'load_config',
 ]
 
 ####################################################################################################
@@ -29,7 +29,7 @@ CONFIG_YAML_PATH = CONFIG_PATH.joinpath('config.yaml')
 CLI_HISTORY_PATH = CONFIG_PATH.joinpath('cli_history')
 
 # DEBUG = True
-DEBUG = False
+DEBUG: bool = False
 
 OS = OsFactory()
 
@@ -41,7 +41,7 @@ DEFAULT_LOOGING_CONFIG_FILE =  Path(__file__).parent.joinpath('logging.yml')
 class Config:
     API_URL: str
     API_KEY: str
-    LOGGING_CONFIG_FILE: str = DEFAULT_LOOGING_CONFIG_FILE
+    LOGGING_CONFIG_FILE: str = str(DEFAULT_LOOGING_CONFIG_FILE)
 
 ####################################################################################################
 

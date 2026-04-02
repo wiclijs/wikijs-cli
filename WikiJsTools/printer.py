@@ -11,7 +11,6 @@ __all__ = ['html_escape', 'printc', 'default_print', 'pt_print', 'STYLE', 'remov
 ####################################################################################################
 
 from enum import Enum
-import html
 
 from prompt_toolkit import HTML
 from prompt_toolkit import print_formatted_text
@@ -83,7 +82,7 @@ def default_print(message: str) -> None:
         if _ not in ('RESET')
     ]
     close_patterns = []
-    for i, o in patterns:
+    for i, _ in patterns:
         close_patterns.append((i.replace('<', '</'), Palette.RESET.value))
     patterns += close_patterns
     # print(patterns)
@@ -95,15 +94,15 @@ def default_print(message: str) -> None:
 
 def pt_print(message: str) -> None:
     # if message:
-    message = HTML(message)
+    html_message = HTML(message)
     print_formatted_text(
-        message,
+        html_message,
         style=STYLE,
     )
 
 ####################################################################################################
 
-def remove_style(message: str) -> None:
+def remove_style(message: str) -> str:
     new_message = ''
     in_style = False
     for c in message:

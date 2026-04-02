@@ -11,14 +11,14 @@ __all__ = ['usorted']
 ####################################################################################################
 
 # To sort correctly latin and unicode
-from icu import Collator, Locale
+import icu
 
 # Fixme:
-collator = Collator.createInstance(Locale('fr_FR'))
+collator = icu.Collator.createInstance(icu.Locale('fr_FR'))  # ty:ignore[unresolved-attribute]
 
 ####################################################################################################
 
-def usorted(iter: list, key: str = None) -> list:
+def usorted(iter: list, key: str | None = None) -> list:
     if key is not None:
         return sorted(iter, key=lambda _: collator.getSortKey(getattr(_, key)))
     else:
