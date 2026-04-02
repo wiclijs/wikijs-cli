@@ -25,16 +25,24 @@ __all__ = ['mount']
 # import logging
 
 from collections import defaultdict
-from errno import ENOENT, ENODATA
-from pathlib import Path, PurePosixPath
-from stat import S_IFDIR, S_IFLNK, S_IFREG
+from errno import ENOENT
+from pathlib import PurePosixPath
+from stat import S_IFDIR, S_IFREG
 from time import time
 import logging
 import os
 
+# https://github.com/fusepy/fusepy 8 years ago
 from fuse import FUSE, FuseOSError, Operations, LoggingMixIn
+# https://github.com/pleiszenburg/refuse fork but 6 years ago
+# https://github.com/mxmlnkn/mfusepy
 
-from .WikiJsApi import WikiJsApi, ApiError, Page
+# https://github.com/libfuse/libfuse
+# https://github.com/libfuse/libfuse/blob/master/example/memfs_ll.cc
+# https://github.com/libfuse/libfuse/releases/tag/fuse-3.0.0
+# https://github.com/libfuse/libfuse/blob/master/ChangeLog.rst
+
+from .WikiJsApi import WikiJsApi, Page
 
 ####################################################################################################
 
@@ -45,6 +53,7 @@ _module_logger = logging.getLogger(__name__)
 ####################################################################################################
 
 def mount(api: WikiJsApi, path: str) -> None:
+    # Fixme:
     fuse = FUSE(WikiJsFuse(api), path, foreground=True, allow_other=True)
 
 ####################################################################################################
@@ -194,6 +203,7 @@ class VirtualFile:
     ##############################################
 
     def truncate(self, length: int) -> None:
+        self._logger.info(f"truncate '{self.path_str}' {length}")
         # make sure extending the file fills in zero bytes
         file_data = self._data
         self._data = file_data[:length].ljust(length, '\x00'.encode('ascii'))
@@ -202,6 +212,7 @@ class VirtualFile:
     ##############################################
 
     def write(self, data: bytes, offset: int) -> int:
+        self._logger.info(f"write '{self.path_str}' @{offset} s={len(data)}")
         # Write can be incomplete !!!
         # make sure the data gets inserted at the right offset
         # and only overwrites the bytes that data is replacing
@@ -501,6 +512,6 @@ class WikiJsFuse(LoggingMixIn, Operations):
 
     def write(self, path: str, data: bytes, offset: int, fd: int) -> int:
         # self._logger.debug(f"Write '{path}' @{offset} fd={fd} {data}")
-        self._logger.info(f"Write '{path}' @{offset} fd={fd}")
+        self._logger.info(f"Write '{path}' @{offset} s={len(data)} fd={fd}")
         file = self._file_by_fd[fd]
         return file.write(data, offset)
