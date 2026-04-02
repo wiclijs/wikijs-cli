@@ -22,6 +22,61 @@ dev = [
     "ty>=0.0.27",
 ]
 
-[tool.uv]
-# or `uv.toml`
-link-mode = "symlink"
+
+[tool.ruff]
+# Exclude a variety of commonly ignored directories
+# exclude = [...]
+
+line-length = 120  # for messages
+indent-width = 4
+
+target-version = "py314"
+
+
+[tool.ruff.lint]
+preview = true
+
+# Unlike Flake8, Ruff doesn't enable pycodestyle warnings (`W`) or
+# McCabe complexity (`C901`) by default.
+# select = ["E4", "E7", "E9", "F"]
+select = [
+  # pycodestyle
+  "E",
+  # Pyflakes
+  "F",
+  # pyupgrade
+  "UP",
+  # flake8-bugbear
+  "B",
+  # flake8-simplify
+  "SIM",
+  # isort
+  "I",
+]
+ignore = [
+  "E302", # blank-lines-top-level
+  "E305", # blank-lines-after-function-or-class
+  "UP037", # Remove quotes from type annotation / due to ty 
+]
+
+# Allow fix for all enabled rules (when `--fix`) is provided.
+fixable = ["ALL"]
+unfixable = []
+
+# Allow unused variables when underscore-prefixed.
+# dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
+
+
+[tool.ruff.format]
+quote-style = "preserve"   # else single | double
+indent-style = "space"
+# skip-magic-trailing-comma = false
+# line-ending = "auto"
+
+# reStructuredText code/literal blocks and doctests are all supported.
+# This is currently disabled by default, but it is planned for this to be opt-out in the future.
+# docstring-code-format = false
+#
+# Set the line length limit used when formatting code snippets in docstrings.
+# This only has an effect when the `docstring-code-format` setting is enabled.
+# docstring-code-line-length = "dynamic"
