@@ -25,22 +25,18 @@ __all__ = ['mount']
 # import logging
 
 from collections import defaultdict
+from collections.abc import Iterable
 from errno import ENOENT
 from pathlib import PurePosixPath
 from stat import S_IFDIR, S_IFREG
 from time import time
+from typing import Any
+import ctypes
 import logging
 import os
 
-# https://github.com/fusepy/fusepy 8 years ago
-from fuse import FUSE, FuseOSError, Operations, LoggingMixIn
-# https://github.com/pleiszenburg/refuse fork but 6 years ago
 # https://github.com/mxmlnkn/mfusepy
-
-# https://github.com/libfuse/libfuse
-# https://github.com/libfuse/libfuse/blob/master/example/memfs_ll.cc
-# https://github.com/libfuse/libfuse/releases/tag/fuse-3.0.0
-# https://github.com/libfuse/libfuse/blob/master/ChangeLog.rst
+import mfusepy as fuse
 
 from .WikiJsApi import WikiJsApi, Page
 
@@ -53,8 +49,18 @@ _module_logger = logging.getLogger(__name__)
 ####################################################################################################
 
 def mount(api: WikiJsApi, path: str) -> None:
-    # Fixme:
-    fuse = FUSE(WikiJsFuse(api), path, foreground=True, allow_other=True)
+    fuse.FUSE(WikiJsFuse(api), path, foreground=True, allow_other=True)
+
+####################################################################################################
+
+def ensure_buffer_size(data: bytes, length: int) -> bytes:
+    """Truncate data to length and fill with zero bytes if necessary"""
+    if length < 0:
+        raise ValueError("Negative length")
+    elif length == 0:
+        return b''
+    else:
+        return data[:length].ljust(length, '\x00'.encode('ascii'))
 
 ####################################################################################################
 
@@ -112,12 +118,16 @@ class VirtualFile:
         self._path = PurePosixPath(path)
         self._fd = int(fd)
         self._created = create
+        self._page: Page | None = None
+        self._data = b''
+        self._write_pending = False
         if not create:
             self._page = self._wfuse._api.page(path)
             self._stat = self.page_stat(self._page)
             self._data = self._page.bytes_data
         else:
-            self._page = None
+            # self._page = None
+            # self._data = b''
             now = time()
             self._stat = dict(
                 st_mode=(S_IFREG | mode),
@@ -127,12 +137,11 @@ class VirtualFile:
                 st_nlink=1,
                 st_size=0,
             )
-            self._data = b''
 
     ##############################################
 
     @classmethod
-    def page_stat(self, page) -> None:
+    def page_stat(self, page) -> dict[str, Any]:
         return dict(
             st_mode=(S_IFREG | 0o644),   # Fixme: mode
             st_ctime=page.created_at.timestamp(),
@@ -203,48 +212,73 @@ class VirtualFile:
     ##############################################
 
     def truncate(self, length: int) -> None:
-        self._logger.info(f"truncate '{self.path_str}' {length}")
+        #! self._logger.info(f"truncate '{self.path_str}' {length}")
         # make sure extending the file fills in zero bytes
-        file_data = self._data
-        self._data = file_data[:length].ljust(length, '\x00'.encode('ascii'))
+        self._data = ensure_buffer_size(self._data, length)
         self._stat['st_size'] = length
 
     ##############################################
 
     def write(self, data: bytes, offset: int) -> int:
-        self._logger.info(f"write '{self.path_str}' @{offset} s={len(data)}")
+        # write is buffered by 4096, last chunk can be < 4096
+        # sequence:
+        #   getattr '/Test/long-page' fd=None
+        #   create '/Test/long-page' mode=33204 fi=33345
+        #   getattr '/Test/long-page' fd=1
+        #   getxattr '/Test/long-page' name=security.capability position=0
+        #   Write '/Test/long-page' offset=0 size=4096 fd=1
+        #   Write '/Test/long-page' offset=4096 size=4096 fd=1
+        #   ...
+        #   Write '/Test/long-page' offset=176128 size=1986 fd=1
+        #   getattr '/Test/long-page' fd=None
+        #   release '/Test/long-page' fd=1
+        #! self._logger.info(f"write '{self.path_str}' @{offset} s={len(data)}")
         # Write can be incomplete !!!
         # make sure the data gets inserted at the right offset
         # and only overwrites the bytes that data is replacing
         file_data = self._data
-        head = file_data[:offset].ljust(offset, '\x00'.encode('ascii'))
+        head = ensure_buffer_size(file_data, offset)
         tail = file_data[offset + len(data):]
         # print(head)
         # print(data)
         # print(tail)
-        file_data = head + data + tail
-        self._data = file_data
+        self._data = head + data + tail
         if self.is_wiki_page:
-            data = file_data.decode('utf8')
-            RULE = '~'*100
-            _ = LINESEP.join(('', RULE, data, RULE))
-            self._logger.info(f"Write on wiki {self.path_str}{_}")
-            page = Page.import_(data, self._api)
-            # Fixme: check path match
-            if page.id is not None:
-                page.update()
-            else:
-                page.create()
-            self._page = page
-            self._stat = self.page_stat(page)
+            self._logger.info(f"Append wiki page {self.path_str} offset={offset} size={len(data)}")
+            self._write_pending = True
         else:
             self._logger.info(f"Write virtual file '{self.path_str}'")
-            self._stat['st_size'] = len(file_data)
+            self._stat['st_size'] = len(self._data)
         return len(data)
+
+    ##############################################
+
+    def release(self) -> None:
+        if not (self.is_wiki_page and self._write_pending):
+            return
+        udata = self._data.decode('utf8')
+        RULE = '~'*100
+        CHUNK_SIZE = 256
+        if len(udata) > (CHUNK_SIZE * 2 + 64):
+            _ = LINESEP.join((udata[:CHUNK_SIZE], '... TRUNCATED ...', udata[-CHUNK_SIZE:]))
+        else:
+            _ = udata
+        _ = LINESEP.join(('', RULE, _, RULE))
+        self._logger.info(f"Write on wiki {self.path_str}{_}")
+        # Fixme: generate path
+        page = Page.import_(udata, self._api)
+        # Fixme: check path match
+        if page.id is not None:
+            page.update()
+        else:
+            page.create()
+        self._page = page
+        self._stat = self.page_stat(page)
 
 ####################################################################################################
 
-class WikiJsFuse(LoggingMixIn, Operations):
+# Use log_callback instead of LoggingMixIn !
+class WikiJsFuse(fuse.LoggingMixIn, fuse.Operations):
 
     # https://libfuse.github.io/doxygen/structfuse__operations.html
 
@@ -255,12 +289,13 @@ class WikiJsFuse(LoggingMixIn, Operations):
     def __init__(self, api: WikiJsApi) -> None:
         self._api = api
         self._mount_time = time()
-        self._file_by_path = {
+        self._file_by_path: dict[str, VirtualDirectory | VirtualFile] = {
             '/': VirtualDirectory(self, '/')
         }
-        self._file_by_fd = {}
-        self.data = defaultdict(bytes)
+        self._file_by_fd: dict[int, VirtualFile] = {}
         self._last_fd = 0
+        # Fixme:
+        self.data = defaultdict(str)
         # now = time()
         # self._files['/'] = dict(
         #     st_mode=(S_IFDIR | 0o755),
@@ -286,7 +321,7 @@ class WikiJsFuse(LoggingMixIn, Operations):
     #     for item in items:
     #         print(item.id, item.path, item.isFolder)
 
-    def _query_folder(self, path: PurePosixPath) -> None:
+    def _query_folder(self, path: PurePosixPath) -> list[dict]:
         cache = []
         for i, part in enumerate(path.parts):
             if i == 0:
@@ -300,28 +335,35 @@ class WikiJsFuse(LoggingMixIn, Operations):
 
     ##############################################
 
-    def chmod(self, path: str, mode: int) -> None:
+    @fuse.overrides(fuse.Operations)
+    def chmod(self, path: str, mode: int) -> int:
+        self._logger.debug(f"chmod '{path}' mode={mode}")
         # self._files[path]['st_mode'] &= 0o770000
         # self._files[path]['st_mode'] |= mode
         return 0
 
     ##############################################
 
-    def chown(self, path: str, uid, gid) -> None:
+    @fuse.overrides(fuse.Operations)
+    def chown(self, path: str, uid: int, gid: int) -> int:
+        self._logger.debug(f"chmod '{path}' uid={uid} gid={gid}")
         # self._files[path]['st_uid'] = uid
         # self._files[path]['st_gid'] = gid
-        pass
+        return 0
 
     ##############################################
 
-    def create(self, path: str, mode: int) -> int:
-        self._logger.info(f"create '{path}' mode={mode}")
+    @fuse.overrides(fuse.Operations)
+    def create(self, path: str, mode: int, fi=None) -> int:
+        self._logger.info(f"create '{path}' mode={mode} fi={fi}")
+        # uid, gid, _pid = fuse.fuse_get_context()
         file = self.new_fd(path, create=True)
         return file.fd
 
     ##############################################
 
-    def getattr(self, path: str, fd: int = None) -> None:
+    @fuse.overrides(fuse.Operations)
+    def getattr(self, path: str, fd=None) -> dict[str, Any]:
         """Get file attributes. Similar to stat()"""
         self._logger.info(f"getattr '{path}' fd={fd}")
         # if path not in self._files:
@@ -334,14 +376,14 @@ class WikiJsFuse(LoggingMixIn, Operations):
         if path in self._file_by_path:
             return self._file_by_path[path].stat
         else:
-            path = PurePosixPath(path)
+            opath = PurePosixPath(path)
             try:
-                cache = self._query_folder(path.parent)
+                cache = self._query_folder(opath.parent)
                 # print(f"Lookup {path}")
                 # print(f"Cache {cache[-1]}")
-                item = cache[-1][path.name]
+                item = cache[-1][opath.name]
             except KeyError:
-                raise FuseOSError(ENOENT)
+                raise fuse.FuseOSError(ENOENT)
             if item.isFolder:
                 return dict(
                     st_mode=(S_IFDIR | 0o755),
@@ -356,7 +398,9 @@ class WikiJsFuse(LoggingMixIn, Operations):
 
     ##############################################
 
-    def getxattr(self, path: str, name: str, position: int = 0) -> str:
+    @fuse.overrides(fuse.Operations)
+    def getxattr(self, path: str, name: str, position: int = 0) -> bytes:
+        self._logger.info(f"getxattr '{path}' name={name} position={position}")
         # attrs = self._files[path].get('attrs', {})
         # try:
         #     return attrs[name]
@@ -372,15 +416,18 @@ class WikiJsFuse(LoggingMixIn, Operations):
 
     ##############################################
 
-    def listxattr(self, path: str) -> None:
+    @fuse.overrides(fuse.Operations)
+    def listxattr(self, path: str) -> Iterable[str]:
+        self._logger.info(f"listxattr '{path}'")
         # attrs = self._files[path].get('attrs', {})
         # return attrs.keys()
         return ()
 
     ##############################################
 
-    def mkdir(self, path: str, mode: int) -> None:
-        self._logger.info(f"mkdir '{path}' {mode}")
+    @fuse.overrides(fuse.Operations)
+    def mkdir(self, path: str, mode: int) -> int:
+        self._logger.info(f"mkdir '{path}' mode={mode}")
         directory = VirtualDirectory(self, path, mode)
         self._file_by_path[path] = directory
         try:
@@ -389,39 +436,44 @@ class WikiJsFuse(LoggingMixIn, Operations):
         except KeyError:
             # Fixme: wiki folder
             pass
+        return 0
 
     ##############################################
 
+    @fuse.overrides(fuse.Operations)
     def open(self, path: str, flags: int) -> int:
+        # OpenBSD calls mknod + open instead of create.
         # See create
-        self._logger.info(f"open '{path}' {flags}")
+        self._logger.info(f"open '{path}' flags={flags}")
         file = self._file_by_path.get(path, None)
         if file is None:
             file = self.new_fd(path, create=False)
-        return file.fd
+        return file.fd  # ty:ignore[unresolved-attribute]
 
     ##############################################
 
+    @fuse.overrides(fuse.Operations)
     def read(self, path: str, size: int, offset: int, fd: int) -> bytes:
-        self._logger.info(f"read '{path}' s={size} o={offset} fd={fd}")
+        self._logger.info(f"read '{path}' size={size} offset={offset} fd={fd}")
         file = self._file_by_fd[fd]
         return file.read(size, offset)
 
     ##############################################
 
-    def readdir(self, path: str, fd: int) -> list[str]:
+    @fuse.overrides(fuse.Operations)
+    def readdir(self, path: str, fd: int) -> fuse.ReadDirResult:
         self._logger.info(f"readdir '{path}' fd={fd}")
-        path = PurePosixPath(path)
+        opath = PurePosixPath(path)
         in_memory_file = []
         for file in self._file_by_path.values():
             fpath = file.path
             if file.path_str == '/':
                 continue
-            if (isinstance(file, VirtualDirectory) or file.created) and fpath.parent == path:
+            if (isinstance(file, VirtualDirectory) or file.created) and fpath.parent == opath:
                 in_memory_file.append(fpath.name)
         entries = ['.', '..'] + in_memory_file
         try:
-            cache = self._query_folder(path)
+            cache = self._query_folder(opath)
             entries += list(cache[-1].keys())
         except KeyError:
             pass
@@ -430,88 +482,131 @@ class WikiJsFuse(LoggingMixIn, Operations):
 
     ##############################################
 
-    def readlink(self, path: str) -> None:
+    @fuse.overrides(fuse.Operations)
+    def readlink(self, path: str) -> str:
         self._logger.info(f"readlink '{path}'")
         return self.data[path]
 
     ##############################################
 
-    def removexattr(self, path: str, name) -> None:
+    @fuse.overrides(fuse.Operations)
+    def release(self, path: str, fd: int) -> int:
+        self._logger.debug(f"release '{path}' fd={fd}")
+        file = self._file_by_fd[fd]
+        file.release()
+        return 0
+
+    ##############################################
+
+    @fuse.overrides(fuse.Operations)
+    def removexattr(self, path: str, name) -> int:
+        self._logger.info(f"removexattr '{path}' name={name}")
         # attrs = self._files[path].get('attrs', {})
         # try:
         #     del attrs[name]
         # except KeyError:
         #     pass   # Should return ENOATTR
-        pass
+        return 0
 
     ##############################################
 
-    def rename(self, old, new) -> None:
+    @fuse.overrides(fuse.Operations)
+    def rename(self, old: str, new: str) -> int:
+        self._logger.info(f"rename '{old}' -> '{new}'")
         # self.data[new] = self.data.pop(old)
         # self._files[new] = self._files.pop(old)
-        pass
+        return 0
 
     ##############################################
 
-    def rmdir(self, path: str) -> None:
+    @fuse.overrides(fuse.Operations)
+    def rmdir(self, path: str) -> int:
+        self._logger.info(f"rmdir '{path}'")
         # with multiple level support, need to raise ENOTEMPTY if contains any files
         # self._files.pop(path)
         # self._files['/']['st_nlink'] -= 1
-        pass
+        return 0
 
     ##############################################
 
-    def setxattr(self, path: str, name: str, value: str, options, position: int = 0) -> None:
+    @fuse.overrides(fuse.Operations)
+    def setxattr(self, path: str, name: str, value, options: int, position: int = 0) -> int:
+        self._logger.info(f"setxattr '{path}' name={name} value={value} options={options} position={position}")
         # Ignore options
         # attrs = self._files[path].setdefault('attrs', {})
         # attrs[name] = value
-        pass
+        return 0
 
     ##############################################
 
-    def statfs(self, path: str) -> None:
+    @fuse.overrides(fuse.Operations)
+    def statfs(self, path: str) -> dict[str, int]:
+        self._logger.info(f"statfs '{path}'")
         return dict(f_bsize=512, f_blocks=4096, f_bavail=2048)
 
     ##############################################
 
-    def symlink(self, target: str, source: str) -> None:
-        self._logger.info(f"symlink {target} {source}")
+    @fuse.overrides(fuse.Operations)
+    def symlink(self, target: str, source: str) -> int:
+        # Fixme: Emacs create symlinks...
+        self._logger.info(f"symlink '{target}' -> '{source}'")
         # self._files[target] = dict(
         #     st_mode=(S_IFLNK | 0o777),
         #     st_nlink=1,
         #     st_size=len(source),
         # )
         # self.data[target] = source
+        return 0
 
     ##############################################
 
-    def truncate(self, path: str, length: int, fd: int = None) -> None:
-        self._logger.info(f"truncate '{path}' #{length} fd={fd}")
+    @fuse.overrides(fuse.Operations)
+    def truncate(self, path: str, length: int, fd=None) -> int:
+        self._logger.info(f"truncate '{path}' length={length} fd={fd}")
         if fd is not None:
             file = self._file_by_fd[fd]
         else:
             file = self._file_by_path[path]
-        return file.truncate(length)
+        file.truncate(length)  # ty:ignore[unresolved-attribute]
+        return 0
 
     ##############################################
 
-    def unlink(self, path: str) -> None:
+    @fuse.overrides(fuse.Operations)
+    def unlink(self, path: str) -> int:
+        self._logger.info(f"unlink '{path}'")
         # self._file_by_path.pop(path)
-        pass
+        return 0
 
     ##############################################
 
-    def utimens(self, path: str, times=None) -> None:
+    @fuse.overrides(fuse.Operations)
+    def utimens(self, path: str, times: tuple[int, int] | None = None) -> int:
+        self._logger.info(f"utimens '{path}' times={times}")
         # now = time()
         # atime, mtime = times if times else (now, now)
         # self._files[path]['st_atime'] = atime
         # self._files[path]['st_mtime'] = mtime
-        pass
+        return 0
 
     ##############################################
 
+    @fuse.overrides(fuse.Operations)
     def write(self, path: str, data: bytes, offset: int, fd: int) -> int:
-        # self._logger.debug(f"Write '{path}' @{offset} fd={fd} {data}")
-        self._logger.info(f"Write '{path}' @{offset} s={len(data)} fd={fd}")
+        # self._logger.debug(f"Write '{path}' offset={offset} fd={fd} data={data}")
+        self._logger.info(f"Write '{path}' offset={offset} size={len(data)} fd={fd}")
         file = self._file_by_fd[fd]
         return file.write(data, offset)
+
+    ##############################################
+
+    @fuse.overrides(fuse.Operations)
+    def mknod(self, path: str, mode: int, dev: int) -> int:
+        # OpenBSD calls mknod + open instead of create.
+        self._logger.debug(f"wmknod '{path}' mode={mode} dev={dev}")
+        return 0
+
+    @fuse.overrides(fuse.Operations)
+    def ioctl(self, path: str, cmd: int, arg: ctypes.c_void_p, fd: int, flags: int, data: ctypes.c_void_p) -> int:
+        self._logger.debug(f"ioctl '{path}' cmd={cmd} arg={arg} fd={fd} flags={flags} data={data}")
+        return 0
