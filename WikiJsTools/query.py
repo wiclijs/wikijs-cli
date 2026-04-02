@@ -402,7 +402,7 @@ mutation ($id: Int!,
 }}}
 '''
 
-PAGE_SEARCH = '''
+SEARCH_PAGE = '''
 query ($query: String!) {
   pages {
     search(query: $query) {

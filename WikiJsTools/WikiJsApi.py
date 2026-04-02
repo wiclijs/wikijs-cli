@@ -362,7 +362,6 @@ class Page(BasePage):
 
     api: 'WikiJsApi'
 
-    id: int
     path: PurePosixPath
     locale: str
 
@@ -378,6 +377,8 @@ class Page(BasePage):
 
     isPrivate: bool
     privateNS: str
+
+    id: int = None
 
     publishStartDate: str = None
     publishEndDate: str = None
@@ -1213,7 +1214,7 @@ class WikiJsApi:
             'variables': {
                 'query': query,
             },
-            'query': Q.SEARCH,
+            'query': Q.SEARCH_PAGE,
         }
         data = self.query_wikijs(query)
         results = [PageSearchResult(**_) for _ in xpath(data, 'data/pages/search/results')]
