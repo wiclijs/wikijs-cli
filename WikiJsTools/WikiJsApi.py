@@ -16,9 +16,8 @@ from dataclasses import dataclass
 from datetime import datetime
 from functools import wraps
 from pathlib import Path, PurePosixPath
-from pprint import pprint
-from typing import Any
-from typing import Iterator
+# from pprint import pprint
+from typing import Any, Iterator, cast
 
 import os
 import types
@@ -95,6 +94,8 @@ class BasePage:
 
     RULE = '-'*50
 
+    ##############################################
+
     @property
     def split_path(self) -> list[str]:
         return str(self.path).split('/')
@@ -130,7 +131,7 @@ class BasePage:
         return {_: getattr(self, _) for _ in self.METADATA_ATTRIBUTES}
 
     # Fixme: is_same_metadata
-    def same_metadata(self, obj: 'PageBase') -> bool:
+    def same_metadata(self, obj: 'BasePage') -> bool:
         for _ in self.METADATA_ATTRIBUTES:
             if getattr(self, _) != getattr(obj, _):
                 return False
@@ -153,7 +154,7 @@ class BasePage:
             cls,
             dst: Path | str,
             locale: str,
-            path: str = None,
+            path: str | None = None,
             content_type: str = 'markdown',
     ) -> Path:
         _ = str(path).split('/')
@@ -162,7 +163,7 @@ class BasePage:
 
     ##############################################
 
-    def file_path(self, dst: Path | str, path: str = None) -> Path:
+    def file_path(self, dst: Path | str, path: str | None = None) -> Path:
         # Note: path is used to move page version
         if path is None:
             path = self.path
@@ -183,10 +184,10 @@ class BasePage:
             cls,
             dst: Path | str,
             locale: str,
-            path: str = None,
+            path: str | None = None,
             content_type: str = 'markdown',
             check_exists: bool = True,
-    ) -> Path:
+    ) -> Path | None:
         dst = Path(dst)
         if check_exists and dst.exists():
             return
@@ -215,7 +216,7 @@ class BasePage:
 
     ##############################################
 
-    def sync(self, dst: Path | str, check_exists: bool = True) -> Path:
+    def sync(self, dst: Path | str, check_exists: bool = True) -> Path | None:
         file_path = self.file_path(dst)
         if check_exists:
             # Check updatedAt
@@ -292,7 +293,7 @@ class BasePage:
         return data
 
     @property
-    def bytes_data(self) -> str:
+    def bytes_data(self) -> bytes:
         if not hasattr(self, '_bytes_data'):
             self._bytes_data = self.export().encode('utf8')
         return self._bytes_data
@@ -340,10 +341,10 @@ class BasePage:
         # Ensure trailing line sep
         # content = content.strip() + LINESEP
         #! data['content'] = content
-        print('pprint data')
-        pprint(data)
-        pprint(content)
-        page = Page(api, **data)
+        # print('pprint data')
+        # pprint(data)
+        # pprint(content)
+        page = Page(api, **data)  # ty:ignore[invalid-argument-type]
         page._content = content
         return page
 
@@ -378,25 +379,25 @@ class Page(BasePage):
     isPrivate: bool
     privateNS: str
 
-    id: int = None
+    id: int | None = None
 
-    publishStartDate: str = None
-    publishEndDate: str = None
+    publishStartDate: str| None = None
+    publishEndDate: str| None = None
 
-    authorId: int = None
-    authorName: str = None
-    authorEmail: str = None
+    authorId: int| None = None
+    authorName: str| None = None
+    authorEmail: str| None = None
 
-    creatorId: int = None
-    creatorName: str = None
-    creatorEmail: str = None
+    creatorId: int| None = None
+    creatorName: str| None = None
+    creatorEmail: str| None = None
 
-    hash: str = None
-    render: str = None
-    editor: str = None
-    scriptCss: str = None
-    scriptJs: str = None
-    toc: str = None
+    hash: str| None = None
+    render: str| None = None
+    editor: str| None = None
+    scriptCss: str| None = None
+    scriptJs: str| None = None
+    toc: str| None = None
 
     # see property
     # content: str = None
@@ -409,10 +410,10 @@ class Page(BasePage):
     ##############################################
 
     @property
-    def content(self) -> None:
+    def content(self) -> bytes:
         # Fixme: not hasattr(self, '_content')
         if '_content' not in self.__dict__:
-            self.api.complete_page(self)
+            self._content = self.api.complete_page(self)
         return self._content
 
     @property
@@ -444,14 +445,14 @@ class Page(BasePage):
     ##############################################
 
     @property
-    def created_at(self) -> datetime:
+    def created_at(self) -> datetime | None:
         if self.createdAt:
             return datetime.fromisoformat(self.createdAt)
         else:
             return None
 
     @property
-    def updated_at(self) -> datetime:
+    def updated_at(self) -> datetime | None:
         if self.updatedAt:
             return datetime.fromisoformat(self.updatedAt)
         else:
@@ -557,11 +558,11 @@ class PageHistory:
     actionType: str   # != PageVersion.action
 
     # == PageVersion.
-    versionId: int = None   # to fake the current version
+    versionId: int | None = None   # to fake the current version
 
     # used for actionType = 'move'
-    valueBefore: str = None  # aka old path
-    valueAfter: str = None   # aka move path
+    valueBefore: str | None = None  # aka old path
+    valueAfter: str | None = None   # aka move path
 
     # history links
     prev: 'PageHistory' = None
@@ -582,7 +583,7 @@ class PageHistory:
     ##############################################
 
     @property
-    def page_version(self) -> PageVersion:
+    def page_version(self) -> PageVersion | None:
         if self.versionId is None:
             # Fixme: could return self.page
             return None
@@ -612,17 +613,17 @@ class PageHistory:
         return self.valueAfter != self.valueBefore
 
     @property
-    def old_path(self) -> str:
+    def old_path(self) -> str | None:
         return self.valueBefore
 
     @property
-    def new_path(self) -> str:
+    def new_path(self) -> str | None:
         return self.valueAfter
 
     ##############################################
 
     @property
-    def wrapper(self) -> Page | PageVersion:
+    def wrapper(self) -> Page | PageVersion | None:
         if self.is_current:
             return self.page
         else:
@@ -719,7 +720,7 @@ class AssetFolder:
     name: str
     slug: str
 
-    path: str = None
+    path: str | None = None
 
     # parent: 'AssetFolder'
 
@@ -730,7 +731,7 @@ class AssetFolder:
 
     ##############################################
 
-    def upload(self, path: Path | str, name: str = None) -> None:
+    def upload(self, path: Path | str, name: str | None = None) -> None:
         self.api.upload(self.id, path, name)
 
 ####################################################################################################
@@ -747,7 +748,7 @@ class Asset:
     createdAt: str
     updatedAt: str
 
-    path: str = None
+    path: str | None = None
 
     ##############################################
 
@@ -761,7 +762,7 @@ class Asset:
 
 ####################################################################################################
 
-def xpath(data: dict, path: str) -> dict:
+def xpath(data: dict, path: str) -> int | float | str | list[str] | dict:
     d = data
     for _ in str(path).split('/'):
         d = d[_]
@@ -885,13 +886,13 @@ class WikiJsApi:
     def get(self, url: str) -> bytes:
         url = f'{self._api_url}/{url}'
         response = requests.get(url, headers=self._headers)
-        if response.status_code != requests.codes.ok:
+        if response.status_code != requests.codes.ok:  # ty:ignore[unresolved-attribute]
             raise NameError(f"Error {response}")
         return response.content
 
     ##############################################
 
-    def upload(self, folder_id: int, path: Path | str, name: str = None) -> None:
+    def upload(self, folder_id: int, path: Path | str, name: str | None = None) -> None:
         path = Path(path).expanduser().resolve()
         if name is None:
             name = path.name
@@ -903,7 +904,7 @@ class WikiJsApi:
         # _ = requests.Request('POST', f'{self._api_url}/u', files=multipart_form_data)
         # print(_.prepare().body[:100])
         response = requests.post(f'{self._api_url}/u', files=multipart_form_data, headers=self._headers)
-        if response.status_code != requests.codes.ok:
+        if response.status_code != requests.codes.ok:  # ty:ignore[unresolved-attribute]
             raise NameError(f"Error {response}")
         # pprint(response)
 
@@ -914,7 +915,7 @@ class WikiJsApi:
             'query': Q.INFO,
         }
         data = self.query_wikijs(query)
-        _ = xpath(data, 'data/system/info')
+        _ = cast(dict, xpath(data, 'data/system/info'))
         # pprint(data)
         self._number_of_pages = _['pagesTotal']
 
@@ -949,14 +950,14 @@ class WikiJsApi:
             'query': Q.PAGE,
         }
         data = self.query_wikijs(query)
-        _ = xpath(data, 'data/pages/singleByPath')
+        _ = cast(dict, xpath(data, 'data/pages/singleByPath'))
         _['tags'] = [_['tag'] for _ in _['tags']]
         # pprint(_)
         return Page(api=self, **_)
 
     ##############################################
 
-    def complete_page(self, page: Page) -> None:
+    def complete_page(self, page: Page) -> bytes:
         query = {
             'variables': {
                 'id': page.id,
@@ -965,11 +966,11 @@ class WikiJsApi:
         }
         data = self.query_wikijs(query)
         # pprint(data)
-        page._content = xpath(data, 'data/pages/single/content')
+        return cast(bytes, xpath(data, 'data/pages/single/content'))
 
     ##############################################
 
-    def page_history(self, page: Page) -> None:
+    def page_history(self, page: Page) -> list[PageHistory]:
         # Return previous versions ordered form the last to the initial one
         query = {
             'variables': {
@@ -978,13 +979,13 @@ class WikiJsApi:
             'query': Q.PAGE_HISTORY,
         }
         data = self.query_wikijs(query)
-        history = xpath(data, 'data/pages/history/trail')
+        history = cast(dict, xpath(data, 'data/pages/history/trail'))
         # _ = xpath(data, 'data/pages/history/total')
         return [PageHistory(api=self, page=page, **_) for _ in history]
 
     ##############################################
 
-    def page_version(self, page_history: PageHistory = None) -> None:
+    def page_version(self, page_history: PageHistory) -> PageVersion:
         # /!\ the current version doesn't have a PageVersion
         # page: Page = None
         # if page is None and page_history is None:
@@ -1036,7 +1037,7 @@ class WikiJsApi:
         # pprint(query)
         data = self.query_wikijs(query)
         # pprint(data)
-        _ = xpath(data, 'data/pages/create/page')
+        _ = cast(dict, xpath(data, 'data/pages/create/page'))
         page.id = int(_['id'])
         page.createdAt = _['createdAt']
         page.updatedAt = _['updatedAt']
@@ -1052,7 +1053,7 @@ class WikiJsApi:
         #   checkConflicts(id: $id, checkoutDate: $checkoutDate) }}"}]'
         # Fixme: ok ?
         if page.id is None:
-            raise NameError(f"Cannot update a page without id")
+            raise NameError("Cannot update a page without id")
         query = {
             'variables': {
                 'id': page.id,
@@ -1075,7 +1076,7 @@ class WikiJsApi:
         # pprint(query)
         data = self.query_wikijs(query)
         # pprint(data)
-        _ = xpath(data, 'data/pages/update/responseResult')
+        _ = cast(dict, xpath(data, 'data/pages/update/responseResult'))
         return ResponseResult(**_)
 
     ##############################################
@@ -1114,7 +1115,7 @@ class WikiJsApi:
         }
         # pprint(query)
         data = self.query_wikijs(query)
-        for _ in xpath(data, 'data/pages/list'):
+        for _ in cast(dict, xpath(data, 'data/pages/list')):
             yield Page(api=self, **_)
 
     ##############################################
@@ -1128,12 +1129,12 @@ class WikiJsApi:
             'query': Q.LIST_PAGE_FOR_TAGS(order_by),
         }
         data = self.query_wikijs(query)
-        for _ in xpath(data, 'data/pages/list'):
+        for _ in cast(dict, xpath(data, 'data/pages/list')):
             yield Page(api=self, **_)
 
     ##############################################
 
-    def tree(self, path: str) -> Iterator[Page]:
+    def tree(self, path: str) -> Iterator[PageTreeItem]:
         """List the pages and folders in the parent of the page at `path`.
         When `includeAncestors` is True, the parent directories are also listed.
         """
@@ -1149,12 +1150,12 @@ class WikiJsApi:
             'query': Q.TREE_PATH,
         }
         data = self.query_wikijs(query)
-        for _ in xpath(data, 'data/pages/tree'):
+        for _ in cast(dict, xpath(data, 'data/pages/tree')):
             yield PageTreeItem(api=self, **_)
 
     @cache(cache_name='itree')
     # def itree(self, id: int) -> Iterator[Page]:
-    def itree(self, id: int) -> list[Page]:
+    def itree(self, id: int) -> list[PageTreeItem]:
         """List the pages and folders in the parent of the page at `path`.
         When `includeAncestors` is True, the parent directories are also listed.
         """
@@ -1169,7 +1170,7 @@ class WikiJsApi:
         data = self.query_wikijs(query)
         # for _ in xpath(data, 'data/pages/tree'):
         #     yield PageTreeItem(api=self, **_)
-        return [PageTreeItem(api=self, **_) for _ in xpath(data, 'data/pages/tree')]
+        return [PageTreeItem(api=self, **_) for _ in cast(dict, xpath(data, 'data/pages/tree'))]
 
     ##############################################
 
@@ -1217,10 +1218,10 @@ class WikiJsApi:
             'query': Q.SEARCH_PAGE,
         }
         data = self.query_wikijs(query)
-        results = [PageSearchResult(**_) for _ in xpath(data, 'data/pages/search/results')]
+        results = [PageSearchResult(**_) for _ in cast(dict, xpath(data, 'data/pages/search/results'))]
         _ = {
             key: value
-            for key, value in xpath(data, 'data/pages/search').items()
+            for key, value in cast(dict, xpath(data, 'data/pages/search')).items()
             if key != 'results'
         }
         return PageSearchResponse(
@@ -1260,7 +1261,7 @@ class WikiJsApi:
             'query': Q.TAGS,
         }
         data = self.query_wikijs(query)
-        for _ in xpath(data, 'data/pages/tags'):
+        for _ in cast(dict, xpath(data, 'data/pages/tags')):
             yield Tag(**_)
 
     ##############################################
@@ -1273,7 +1274,7 @@ class WikiJsApi:
             'query': Q.SEARCH_TAGS,
         }
         data = self.query_wikijs(query)
-        return xpath(data, 'data/pages/searchTags')
+        return cast(list[str], xpath(data, 'data/pages/searchTags'))
 
     ############################################################################
     #
@@ -1288,7 +1289,7 @@ class WikiJsApi:
             'query': Q.LIST_ASSET_SUBFOLDER,
         }
         data = self.query_wikijs(query)
-        for _ in xpath(data, 'data/assets/folders'):
+        for _ in cast(dict, xpath(data, 'data/assets/folders')):
             yield AssetFolder(self, **_)
 
     ##############################################
@@ -1322,7 +1323,7 @@ class WikiJsApi:
             # author: Author
         }
         data = self.query_wikijs(query)
-        for _ in xpath(data, 'data/assets/list'):
+        for _ in cast(dict, xpath(data, 'data/assets/list')):
             yield Asset(**_)
 
     ############################################################################
@@ -1339,7 +1340,7 @@ class WikiJsApi:
         }
         data = self.query_wikijs(query)
         # pprint(data)
-        for _ in xpath(data, 'data/pages/links'):
+        for _ in cast(dict, xpath(data, 'data/pages/links')):
             link = PageLinkItem(**_)
             if link.links:
                 yield link

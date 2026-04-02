@@ -41,7 +41,7 @@ def dump_query(query: dict, colourize: bool = True) -> str:
                 variables = variables.replace(c, f'<{colour}>{c}</{colour}>')
             with_ = f"<{colour}>with</{colour}>"
         else:
-            with_ = f"with"
+            with_ = "with"
 
         return f'"{query_str}"{LINESEP}  {with_}{LINESEP}{variables}'
     else:
