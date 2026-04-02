@@ -16,12 +16,11 @@ __all__ = ['setup_logging']
 
 ####################################################################################################
 
-from pathlib import Path
-from typing import Optional
 import logging
 import logging.config
 import os
 import sys
+from pathlib import Path
 
 import yaml
 
@@ -34,7 +33,7 @@ LEVEL_ENV = 'WikiJsCliLogLevel'
 def setup_logging(
         application_name: str = 'WikiJsCli',
         config_file: Path | str = Config.DEFAULT_LOOGING_CONFIG_FILE,
-        level: Optional[int] = None,
+        level: int | str | None = None,
 ) -> logging.Logger:
 
     # logging_config_file_name = config.Logging.find(config_file)
@@ -48,10 +47,7 @@ def setup_logging(
 
     # Use "simple" formatter for Windows and OSX
     # and "ansi" for Linux
-    if Config.OS.on_windows or Config.OS.on_osx:
-        formatter = 'simple'
-    else:
-        formatter = 'ansi'
+    formatter = 'simple' if Config.OS.on_windows or Config.OS.on_osx else 'ansi'
     logging_config['handlers']['console']['formatter'] = formatter
 
     # Load YAML settings

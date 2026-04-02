@@ -13,7 +13,6 @@ __all__ = ['main']
 ####################################################################################################
 
 import argparse
-import logging
 
 from WikiJsTools.fuse import mount
 from WikiJsTools.WikiJsApi import WikiJsApi
@@ -38,10 +37,10 @@ def main():
     config = Config.load_config()
     logger = Logging.setup_logging(
         config_file=config.LOGGING_CONFIG_FILE,
-        level= 'DEBUG' if args.debug else 'INFO',
+        level='DEBUG' if args.debug else 'INFO',
     )
     logger.info("Start...")
-    level = logging.DEBUG
+    # level = logging.DEBUG
 
     api = WikiJsApi(api_url=config.API_URL, api_key=config.API_KEY)
 

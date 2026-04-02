@@ -12,8 +12,7 @@ __all__ = ['html_escape', 'printc', 'default_print', 'pt_print', 'STYLE', 'remov
 
 from enum import Enum
 
-from prompt_toolkit import HTML
-from prompt_toolkit import print_formatted_text
+from prompt_toolkit import HTML, print_formatted_text
 from prompt_toolkit.styles import Style
 
 ####################################################################################################
@@ -108,7 +107,7 @@ def remove_style(message: str) -> str:
     for c in message:
         if in_style:
             if c == '>':
-                in_style = False
+                in_style = False  # Fixme: ty
         else:
             if c == '<':
                 in_style = True

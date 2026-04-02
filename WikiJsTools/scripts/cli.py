@@ -35,7 +35,7 @@ def main():
     config = Config.load_config()
     logger = Logging.setup_logging(
         config_file=config.LOGGING_CONFIG_FILE,
-        level= 'DEBUG' if args.debug else 'INFO',
+        level='DEBUG' if args.debug else 'INFO',
     )
     logger.info("Start...")
 

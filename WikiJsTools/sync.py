@@ -10,14 +10,15 @@ __all__ = ['sync', 'git_sync']
 
 ####################################################################################################
 
-from datetime import datetime
-from pathlib import Path
-from pprint import pprint
-import json
+import json  # noqa: I001
 import os
 import subprocess
+from datetime import datetime
+from pathlib import Path
+# from pprint import pprint
+from typing import cast
 
-from .printer import printc, CommandError
+from .printer import CommandError, printc
 from .WikiJsApi import WikiJsApi
 
 ####################################################################################################
@@ -28,7 +29,7 @@ HISTORY_JSON = 'wikijs-history.json'
 
 ####################################################################################################
 
-def git(repo_path, command: str, *args, **kwargs) -> None:
+def git(repo_path, command: str, *args, **kwargs) -> str | None:
     args = [str(_) for _ in args]
     cmd = (
         GIT,
@@ -51,9 +52,12 @@ def git(repo_path, command: str, *args, **kwargs) -> None:
     return None
 
 
-def get_last_commit_date(repo_path):
+def get_last_commit_date(repo_path) -> datetime:
     output = git(repo_path, 'log', '-1', '--date=iso-strict', '--format="%ad"', capture_output=True)
-    return datetime.fromisoformat(output.strip().replace('"', ''))
+    if output is not None:
+        return datetime.fromisoformat(output.strip().replace('"', ''))
+    else:
+        raise ValueError("Git returned None")
 
 ####################################################################################################
 
@@ -71,13 +75,15 @@ def sync_asset(api: WikiJsApi, path: Path, exist_ok: bool = False) -> None:
 
     # Collect current asset list on disk
     paths = []
-    for dirpath, dirnames, filenames in asset_path.walk():
+    for dirpath, _, filenames in asset_path.walk():
         dirpath = Path(dirpath)
         for filename in filenames:
             _ = dirpath.joinpath(filename)
             paths.append(_)
 
-    def process_folder(folder_id: int = 0, stack: list = []):
+    def process_folder(folder_id: int = 0, stack: list | None = None):
+        if stack is None:
+            stack = []
         for asset in api.list_asset(folder_id):
             # url = '/'.join([api.api_url] + stack + [asset.filename])
             asset.path = '/'.join(stack + [asset.filename])
@@ -108,7 +114,7 @@ def sync_asset(api: WikiJsApi, path: Path, exist_ok: bool = False) -> None:
 def sync(api: WikiJsApi, path: Path) -> None:
     """Sync on disk"""
 
-   # DANGER : write many files and delete old assets !!!
+    # DANGER : write many files and delete old assets !!!
 
     sync_path = Path(path).expanduser().resolve()
     if sync_path.exists():
@@ -169,13 +175,13 @@ def git_sync(api: WikiJsApi, path: Path) -> None:
             f'--date={date.isoformat()}',
         )
 
-    json_versions = []
-    last_version_date = None   # Fixme: this is not the last edit
-    last_commit_date = None
+    json_versions = []  # Fixme: ty
+    last_version_date: datetime | None = None  # Fixme: this is not the last edit
+    last_commit_date: datetime | None = None  # Fixme: ty
     if created:
         git_('init')
     else:
-        with open(history_json_path, 'r') as fh:
+        with open(history_json_path) as fh:
             json_versions = json.load(fh)
             last_version = json_versions[-1]
             # How versionID are generated ???
@@ -197,17 +203,16 @@ def git_sync(api: WikiJsApi, path: Path) -> None:
 
     # Commit page history
     for ph in history:
-        if last_commit_date is not None:
-            # Git commit date is limited to s and not ms !
-            # if ph.date <= last_commit_date:
-            if ph.date <= last_version_date:
-                continue
+        # Git commit date is limited to s and not ms !
+        # if last_commit_date is not None and ph.date <= last_commit_date:
+        if last_version_date is not None and ph.date <= last_version_date:
+            continue
 
         page = ph.page
 
         is_moved = ph.is_moved
         if is_moved:
-            old_upath, new_upath = is_moved
+            old_upath, new_upath = cast(tuple[str, str], is_moved)
             printc(f'<blue>moved</blue> @{page.locale} <green>{old_upath}</green> -> <green>{new_upath}</green>')
             old_path = page.file_path(repo_path, old_upath)
             if not old_path.exists():
@@ -247,7 +252,7 @@ def git_sync(api: WikiJsApi, path: Path) -> None:
     sync_asset(api, asset_path, exist_ok=True)
 
     printc("<blue>Clean old path</blue>")
-    for root, direnames, filenames in repo_path.walk():
+    for root, direnames, _ in repo_path.walk():
         if root == repo_path:
             direnames.remove('.git')
         path = root
@@ -258,7 +263,7 @@ def git_sync(api: WikiJsApi, path: Path) -> None:
                 _ = path.relative_to(repo_path)
                 printc(f"<green>{_}</green> <orange>is empty</orange>")
                 path.rmdir()
-                path = path.parent
+                path = path.parent  # Fixme: ty
 
     # Now write history.json
     with open(history_json_path, 'w') as fh:

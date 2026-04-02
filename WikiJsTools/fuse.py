@@ -22,8 +22,9 @@ __all__ = ['mount']
 
 ####################################################################################################
 
-# import logging
-
+import ctypes
+import logging
+import os
 from collections import defaultdict
 from collections.abc import Iterable
 from errno import ENOENT
@@ -31,14 +32,11 @@ from pathlib import PurePosixPath
 from stat import S_IFDIR, S_IFREG
 from time import time
 from typing import Any
-import ctypes
-import logging
-import os
 
 # https://github.com/mxmlnkn/mfusepy
 import mfusepy as fuse
 
-from .WikiJsApi import WikiJsApi, Page
+from .WikiJsApi import Page, WikiJsApi
 
 ####################################################################################################
 
@@ -70,7 +68,7 @@ class VirtualDirectory:
 
     ##############################################
 
-    def __init__(self, wfuse: 'WikiJsFuse', path: str, mode: int=0o755) -> None:
+    def __init__(self, wfuse: 'WikiJsFuse', path: str, mode: int = 0o755) -> None:
         self._wfuse = wfuse
         path = str(path)
         self._path = PurePosixPath(path)
@@ -212,7 +210,7 @@ class VirtualFile:
     ##############################################
 
     def truncate(self, length: int) -> None:
-        #! self._logger.info(f"truncate '{self.path_str}' {length}")
+        # ! self._logger.info(f"truncate '{self.path_str}' {length}")
         # make sure extending the file fills in zero bytes
         self._data = ensure_buffer_size(self._data, length)
         self._stat['st_size'] = length
@@ -232,7 +230,7 @@ class VirtualFile:
         #   Write '/Test/long-page' offset=176128 size=1986 fd=1
         #   getattr '/Test/long-page' fd=None
         #   release '/Test/long-page' fd=1
-        #! self._logger.info(f"write '{self.path_str}' @{offset} s={len(data)}")
+        # ! self._logger.info(f"write '{self.path_str}' @{offset} s={len(data)}")
         # Write can be incomplete !!!
         # make sure the data gets inserted at the right offset
         # and only overwrites the bytes that data is replacing
@@ -257,7 +255,7 @@ class VirtualFile:
         if not (self.is_wiki_page and self._write_pending):
             return
         udata = self._data.decode('utf8')
-        RULE = '~'*100
+        RULE = '~' * 100
         CHUNK_SIZE = 256
         if len(udata) > (CHUNK_SIZE * 2 + 64):
             _ = LINESEP.join((udata[:CHUNK_SIZE], '... TRUNCATED ...', udata[-CHUNK_SIZE:]))
@@ -327,7 +325,7 @@ class WikiJsFuse(fuse.LoggingMixIn, fuse.Operations):
             if i == 0:
                 folder_id = 0
             else:
-                folder = cache[i-1][part]
+                folder = cache[i - 1][part]
                 folder_id = folder.id
             items = {_.path.name: _ for _ in self._api.itree(folder_id)}
             cache.append(items)
@@ -382,8 +380,8 @@ class WikiJsFuse(fuse.LoggingMixIn, fuse.Operations):
                 # print(f"Lookup {path}")
                 # print(f"Cache {cache[-1]}")
                 item = cache[-1][opath.name]
-            except KeyError:
-                raise fuse.FuseOSError(ENOENT)
+            except KeyError as e:
+                raise fuse.FuseOSError(ENOENT) from e
             if item.isFolder:
                 return dict(
                     st_mode=(S_IFDIR | 0o755),
@@ -563,7 +561,7 @@ class WikiJsFuse(fuse.LoggingMixIn, fuse.Operations):
     @fuse.overrides(fuse.Operations)
     def truncate(self, path: str, length: int, fd=None) -> int:
         self._logger.info(f"truncate '{path}' length={length} fd={fd}")
-        if fd is not None:
+        if fd is not None:  # noqa: SIM108
             file = self._file_by_fd[fd]
         else:
             file = self._file_by_path[path]

@@ -18,7 +18,7 @@ collator = icu.Collator.createInstance(icu.Locale('fr_FR'))  # ty:ignore[unresol
 
 ####################################################################################################
 
-def usorted(iter: list, key: str | None = None) -> list:
+def usorted(iter: list[str], key: str | None = None) -> list:
     if key is not None:
         return sorted(iter, key=lambda _: collator.getSortKey(getattr(_, key)))
     else:

@@ -11,6 +11,7 @@ __all__ = ['date2str']
 ####################################################################################################
 
 from datetime import datetime
+
 from dateutil import tz
 
 ####################################################################################################
@@ -21,9 +22,5 @@ LOCAL_ZONE = tz.tzlocal()
 ####################################################################################################
 
 def date2str(date: datetime, local: bool = True) -> str:
-    if local:
-        _ = LOCAL_ZONE
-    else:
-        _ = UTC_ZONE
-    _ = date.astimezone(_)
+    _ = date.astimezone(LOCAL_ZONE if local else UTC_ZONE)
     return _.strftime('%Y/%m/%d %H:%M:%S')

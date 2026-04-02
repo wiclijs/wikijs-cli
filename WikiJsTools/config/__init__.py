@@ -33,7 +33,7 @@ DEBUG: bool = False
 
 OS = OsFactory()
 
-DEFAULT_LOOGING_CONFIG_FILE =  Path(__file__).parent.joinpath('logging.yml')
+DEFAULT_LOOGING_CONFIG_FILE = Path(__file__).parent.joinpath('logging.yml')
 
 ####################################################################################################
 
