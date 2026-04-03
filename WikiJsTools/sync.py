@@ -175,9 +175,9 @@ def git_sync(api: WikiJsApi, path: Path) -> None:
             f'--date={date.isoformat()}',
         )
 
-    json_versions = []  # Fixme: ty
+    json_versions = []  # Fixme: ty: unused
     last_version_date: datetime | None = None  # Fixme: this is not the last edit
-    last_commit_date: datetime | None = None  # Fixme: ty
+    last_commit_date: datetime | None = None  # Fixme: ty: unused
     if created:
         git_('init')
     else:
@@ -257,7 +257,7 @@ def git_sync(api: WikiJsApi, path: Path) -> None:
             direnames.remove('.git')
         path = root
         while True:
-            if list(path.iterdir()):
+            if list(path.iterdir()):   # Fixme: better ? next()
                 break
             else:
                 _ = path.relative_to(repo_path)

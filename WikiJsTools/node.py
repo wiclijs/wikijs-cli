@@ -13,7 +13,7 @@ __all__ = ['Node']
 from collections.abc import Iterator
 from pathlib import PurePosixPath
 
-from .unicode import usorted
+from .unicode import usorted, usorted_key
 
 ####################################################################################################
 
@@ -39,8 +39,7 @@ class Node:
     def path(self) -> PurePosixPath:
         if self.is_root:
             return PurePosixPath('/')
-        # Fixme: ty doesn't understand is_root
-        elif self.parent.is_root:  # ty:ignore[unresolved-attribute]
+        elif self.parent.is_root:  # ty:ignore[unresolved-attribute] / is_root don't narrow
             return PurePosixPath('/', self._name)
         else:
             return self.parent.path.joinpath(self._name)  # ty:ignore[unresolved-attribute]
@@ -69,7 +68,7 @@ class Node:
     def childs(self) -> Iterator['Node']:
         childs = list(self._childs.values())
         # childs.sort(key=lambda _: _._name)
-        childs = usorted(childs, 'name')  # ty:ignore[invalid-argument-type]
+        childs = usorted_key(childs, 'name')
         return iter(childs)
 
     @property
@@ -86,7 +85,7 @@ class Node:
 
     @property
     def child_names(self) -> list[str]:
-        return usorted(self._childs.keys())  # ty:ignore[invalid-argument-type]
+        return usorted(self._childs.keys())
 
     @property
     def folder_names(self) -> list[str]:

@@ -331,7 +331,7 @@ class BasePage(BasePageProtocol):
 
     @classmethod
     def import_(self, lines: str, api: 'WikiJsApi') -> 'Page':
-        data = dict(id=None, createdAt=None, updatedAt=None)
+        data: dict[str, Any] = dict(id=None, createdAt=None, updatedAt=None)
         # Fixme: we must keep content as it is
         offset = 0
         for line in lines.splitlines(keepends=True):
@@ -359,7 +359,7 @@ class BasePage(BasePageProtocol):
         # print('pprint data')
         # pprint(data)
         # pprint(content)
-        page = Page(api, **data)  # ty:ignore[invalid-argument-type] due to dict type
+        page = Page(api, **data)
         page._content = content
         return page
 
@@ -664,7 +664,7 @@ class PageHistory:
     @property
     def is_moved(self) -> bool | tuple[str, str]:
         if self.actionType == 'moved':
-            return (self.valueBefore, self.valueAfter)  # ty:ignore[invalid-return-type]
+            return (self.valueBefore, self.valueAfter)  # ty:ignore[invalid-return-type] / None ?
         # but a move action can also be
         prev = self.prev
         if prev is not None:
@@ -898,7 +898,7 @@ class WikiJsApi:
     def get(self, url: str) -> bytes:
         url = f'{self._api_url}/{url}'
         response = requests.get(url, headers=self._headers)
-        if response.status_code != requests.codes.ok:  # ty:ignore[unresolved-attribute]
+        if response.status_code != requests.codes.ok:  # ty:ignore[unresolved-attribute] / types-requests
             raise NameError(f"Error {response}")
         return response.content
 
@@ -1207,7 +1207,7 @@ class WikiJsApi:
                 # print(f'{parent} // {node}')
                 parent = node
             # parent is leaf
-            parent.page = page  # ty:ignore[unresolved-attribute] / parent is Node not WikiNode...
+            cast(WikiNode, parent).page = page
 
         pages = self.list_pages()
         if progress_bar_cls is not None:

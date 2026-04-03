@@ -31,14 +31,12 @@ from typing import cast
 from prompt_toolkit import PromptSession, shortcuts
 from prompt_toolkit.completion import CompleteEvent, Completer, Completion
 from prompt_toolkit.document import Document
-
-# from prompt_toolkit.formatted_text import FormattedText
 from prompt_toolkit.history import FileHistory
 from prompt_toolkit.shortcuts import ProgressBar
 
 from . import config, sync
 from .printer import STYLE, CommandError, printc
-from .unicode import usorted
+from .unicode import usorted_key
 from .WikiJsApi import ApiError, Page, WikiJsApi, WikiNode
 
 ####################################################################################################
@@ -110,7 +108,7 @@ class CustomCompleter(Completer):
             self,
             document: Document,
             complete_event: CompleteEvent,
-            words: list[str],
+            words: Iterable[str],
             separator: str,
             get_word_before_cursor,
     ) -> Iterable[Completion]:
@@ -206,7 +204,7 @@ class CustomCompleter(Completer):
                     # Fixme: 'list[Tag]' type is list
                     # Fixme: tag can have space !
                     words = [_.tag for _ in self._cli._api.tags()]
-        yield from self._get_completions(document, complete_event, words, separator, get_word_before_cursor)  # ty:ignore[invalid-argument-type]
+        yield from self._get_completions(document, complete_event, words, separator, get_word_before_cursor)
 
 ####################################################################################################
 
@@ -424,16 +422,17 @@ class Cli:
         self._init()
         if path == '..':
             if not self._current_path.is_root:
-                self._current_path = self._current_path.parent  # ty:ignore[invalid-assignment]
+                self._current_path = self._current_path.parent  # ty:ignore[invalid-assignment] / @Todo
         else:
             if path.startswith('/'):  # noqa: SIM108
                 _ = self._page_tree.find(path[1:])
             else:
                 _ = self._current_path.find(path)
+            _ = cast(WikiNode, _)
             if _.is_leaf:
                 self.print(f"<red>Error: </red> <blue>{path}</blue> <red>is not a folder</red>")
             else:
-                self._current_path = _  # ty:ignore[invalid-assignment]
+                self._current_path = _
         self.print(f"<red>moved to</red> <blue>{self._current_path.path}</blue>")
 
     ##############################################
@@ -443,12 +442,12 @@ class Cli:
         self._init()
         if path == '..':
             if not self._current_asset_folder.is_root:
-                self._current_asset_folder = self._current_asset_folder.parent  # ty:ignore[invalid-assignment]
+                self._current_asset_folder = cast(WikiNode, self._current_asset_folder.parent)
         else:
-            _ = self._current_asset_folder.find(path)
+            _ = cast(WikiNode, self._current_asset_folder.find(path))
             if _.is_leaf:
                 self.print(f"<red>Error: </red> <blue>{path}</blue> <red>is not a folder</red>")
-            self._current_asset_folder = _  # ty:ignore[invalid-assignment]
+            self._current_asset_folder = _
         self.print(f"<red>moved to</red> <blue>{self._current_asset_folder.path}</blue>")
 
         # try:
@@ -533,7 +532,7 @@ class Cli:
         path_ = self._absolut_path(path)
         items = list(self._api.tree(path_))
         # items.sort(key=lambda _: _.path)
-        items = usorted(items, 'path_str')
+        items = usorted_key(items, 'path_str')
         for item in items:
             is_folder = '/' if item.isFolder else ''
             path = f"{item.path}{is_folder}"
@@ -543,7 +542,7 @@ class Cli:
         """Show page tree"""
         # items = list(self._api.itree(id))
         items = self._api.itree(id)
-        items = usorted(items, 'path_str')
+        items = usorted_key(items, 'path_str')
         for item in items:
             is_folder = '/' if item.isFolder else ''
             path = f"{item.path}{is_folder}"
@@ -558,12 +557,12 @@ class Cli:
         # for _ in self._current_path.folder_childs:
         #     self.print(f"  {_.name}")
         for _ in self._current_path.childs:
-            _ = cast(WikiNode, _)  # Fixme
+            _ = cast(WikiNode, _)  # Fixme:
             if _.is_folder:
                 has_page = f' : <orange>{_.page.title}</orange>' if _.page is not None else ''
                 self.print(f"  <green>{_.name} /</green>{has_page}")
             else:
-                self.print(f"  <blue>{_.name}</blue> : <orange>{_.page.title}</orange>")  # ty:ignore[unresolved-attribute]
+                self.print(f"  <blue>{_.name}</blue> : <orange>{_.page.title}</orange>")  # ty:ignore[unresolved-attribute] / @Todo | None
 
     ############################################################################
     #
@@ -771,7 +770,7 @@ class Cli:
 
     def tags(self) -> None:
         """List the tags"""
-        for _ in usorted(self._api.tags(), 'tag'):  # ty:ignore[invalid-argument-type]
+        for _ in usorted_key(self._api.tags(), 'tag'):
             self.print(f'<blue>{_.tag:30}</blue> <green>{_.title}</green>')
 
     ##############################################
@@ -919,7 +918,7 @@ class Cli:
         """List the page links"""
         pages = list(self._api.links())
         # pages.sort(key=lambda _: _.path)
-        pages = usorted(pages, 'path')
+        pages = usorted_key(pages, 'path')
         for page in pages:
             self.print(f'<blue>{page.path:60}</blue>')
             # sorted()

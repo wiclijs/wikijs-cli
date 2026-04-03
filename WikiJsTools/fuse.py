@@ -31,7 +31,7 @@ from errno import ENOENT
 from pathlib import PurePosixPath
 from stat import S_IFDIR, S_IFREG
 from time import time
-from typing import Any
+from typing import Any, cast
 
 # https://github.com/mxmlnkn/mfusepy
 import mfusepy as fuse
@@ -360,6 +360,7 @@ class WikiJsFuse(fuse.LoggingMixIn, fuse.Operations):
 
     ##############################################
 
+    # Fixme: fd=None int ?
     @fuse.overrides(fuse.Operations)
     def getattr(self, path: str, fd=None) -> dict[str, Any]:
         """Get file attributes. Similar to stat()"""
@@ -443,10 +444,10 @@ class WikiJsFuse(fuse.LoggingMixIn, fuse.Operations):
         # OpenBSD calls mknod + open instead of create.
         # See create
         self._logger.info(f"open '{path}' flags={flags}")
-        file = self._file_by_path.get(path, None)
+        file = cast(VirtualFile | None, self._file_by_path.get(path, None))
         if file is None:
             file = self.new_fd(path, create=False)
-        return file.fd  # ty:ignore[unresolved-attribute]
+        return file.fd
 
     ##############################################
 
@@ -561,11 +562,11 @@ class WikiJsFuse(fuse.LoggingMixIn, fuse.Operations):
     @fuse.overrides(fuse.Operations)
     def truncate(self, path: str, length: int, fd=None) -> int:
         self._logger.info(f"truncate '{path}' length={length} fd={fd}")
-        if fd is not None:  # noqa: SIM108
-            file = self._file_by_fd[fd]
+        if fd is None:  # noqa: SIM108
+            file = cast(VirtualFile, self._file_by_path[path])
         else:
-            file = self._file_by_path[path]
-        file.truncate(length)  # ty:ignore[unresolved-attribute]
+            file = self._file_by_fd[fd]
+        file.truncate(length)
         return 0
 
     ##############################################

@@ -6,20 +6,25 @@
 #
 ####################################################################################################
 
-__all__ = ['usorted']
+__all__ = ['usorted', 'usorted_key']
 
 ####################################################################################################
+
+from collections.abc import Iterable, KeysView
+from typing import Any
 
 # To sort correctly latin and unicode
 import icu
 
-# Fixme:
-collator = icu.Collator.createInstance(icu.Locale('fr_FR'))  # ty:ignore[unresolved-attribute]
+# Fixme: https://github.com/python/typeshed
+collator = icu.Collator.createInstance(icu.Locale('fr_FR'))  # ty:ignore[unresolved-attribute] / icu
 
 ####################################################################################################
 
-def usorted(iter: list[str], key: str | None = None) -> list:
-    if key is not None:
-        return sorted(iter, key=lambda _: collator.getSortKey(getattr(_, key)))
-    else:
-        return sorted(iter, key=collator.getSortKey)
+# Note: for typing we split usorted in two variants
+
+def usorted(iter: Iterable[str] | KeysView[str]) -> list:
+    return sorted(iter, key=collator.getSortKey)
+
+def usorted_key(iter: Iterable[Any], key: str) -> list:
+    return sorted(iter, key=lambda _: collator.getSortKey(getattr(_, key)))
