@@ -97,6 +97,12 @@ class PageTreeItem:
     def path_str(self) -> str:
         return str(self.path)
 
+    @property
+    def path_with_ext(self) -> PurePosixPath:
+        # Fixme: only supports Markdown
+        _ = self.path
+        return _.parent / (_.name if self.isFolder else _.name + '.md')
+
 ####################################################################################################
 
 class BasePageProtocol(Protocol):

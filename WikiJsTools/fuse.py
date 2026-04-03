@@ -156,7 +156,8 @@ class VirtualFile(VirtualBase):
         self._data = b''
         self._write_pending = False
         if not create:
-            self._page = self._wfuse._api.page(path)
+            # self._page = self._wfuse._api.page(path)
+            self._page = self._wfuse._api.page(self.real_path_str)
             self._stat = self.page_stat(self._page)
             self._data = self._page.bytes_data
         else:
@@ -189,6 +190,10 @@ class VirtualFile(VirtualBase):
         )
 
     ##############################################
+
+    @property
+    def real_path_str(self) -> str:
+        return str(self._path.parent / self._path.stem)
 
     @property
     def created(self) -> bool:
@@ -386,7 +391,8 @@ class WikiJsFuse(fuse.LoggingMixIn, fuse.Operations):
             else:
                 folder = cache[i - 1][part]
                 folder_id = folder.id
-            items: PageTreeItemDict = {_.path.name: _ for _ in self._api.itree(folder_id)}
+            items: PageTreeItemDict = {_.path_with_ext.name: _ for _ in self._api.itree(folder_id)}
+            # items: PageTreeItemDict = {_.path.name: _ for _ in self._api.itree(folder_id)}
             cache.append(items)
         return cache
 
@@ -434,6 +440,8 @@ class WikiJsFuse(fuse.LoggingMixIn, fuse.Operations):
             return self._file_by_path[path].stat
         else:
             opath = PurePosixPath(path)
+            real_path = opath.parent / opath.stem
+            self._logger.debug(f"  real path {real_path}")
             try:
                 cache = self._query_folder(opath.parent)
                 # print(f"Lookup {path}")
@@ -450,7 +458,8 @@ class WikiJsFuse(fuse.LoggingMixIn, fuse.Operations):
                     st_nlink=2,
                 )
             else:
-                page = self._api.page(path)
+                # page = self._api.page(path)
+                page = self._api.page(str(real_path))
                 return VirtualFile.page_stat(page)
 
     ##############################################
