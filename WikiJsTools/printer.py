@@ -6,7 +6,16 @@
 #
 ####################################################################################################
 
-__all__ = ['html_escape', 'printc', 'default_print', 'pt_print', 'STYLE', 'remove_style', 'CommandError']
+__all__ = [
+    'html_escape',
+    'printc',
+    'default_print',
+    'pt_print',
+    'STYLE',
+    'remove_style',
+    'CommandError',
+    'init_console',
+]
 
 ####################################################################################################
 
@@ -14,6 +23,34 @@ from enum import Enum
 
 from prompt_toolkit import HTML, print_formatted_text
 from prompt_toolkit.styles import Style
+
+from rich.console import Console
+from rich.theme import Theme
+
+####################################################################################################
+
+console = None
+
+def init_console() -> Console:
+    global console
+    if console is None:
+        theme = Theme({
+            # '': '#ffffff',
+            # Prompt
+            'prompt': '#ff0000',
+            # Output
+            # 'red': '#ff0000',
+            # 'green': '#00ff00',
+            # 'blue': '#0000ff',
+            'red': '#ed1414',
+            'green': '#10cf15',
+            'blue': '#1b99f3',
+            'orange': '#f57300',
+            'violet': '#9b58b5',
+            # 'greenblue': '#19bb9c',
+        })
+        console = Console(theme=theme)
+    return console
 
 ####################################################################################################
 
@@ -68,7 +105,7 @@ STYLE = Style.from_dict({
     'blue': '#1b99f3',
     'orange': '#f57300',
     'violet': '#9b58b5',
-    'greenblue': '#19bb9c',
+    # 'greenblue': '#19bb9c',
 })
 
 ####################################################################################################

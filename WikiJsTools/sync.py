@@ -18,7 +18,7 @@ from pathlib import Path
 # from pprint import pprint
 from typing import cast
 
-from .printer import CommandError, printc
+from .printer import CommandError, init_console
 from .WikiJsApi import WikiJsApi
 
 ####################################################################################################
@@ -30,6 +30,8 @@ HISTORY_JSON = 'wikijs-history.json'
 ####################################################################################################
 
 def git(repo_path, command: str, *args, **kwargs) -> str | None:
+    console = init_console()
+    printc = console.print
     args = [str(_) for _ in args]
     cmd = (
         GIT,
@@ -64,6 +66,9 @@ def get_last_commit_date(repo_path) -> datetime:
 def sync_asset(api: WikiJsApi, path: Path, exist_ok: bool = False) -> None:
 
     # DANGER : remove all the files that are not listed as assets !!!
+
+    console = init_console()
+    printc = console.print
 
     asset_path = Path(path).expanduser().resolve()
     printc(f"<blue>Sync asset path</blue> <green>{asset_path}</green>")
@@ -116,6 +121,9 @@ def sync(api: WikiJsApi, path: Path) -> None:
 
     # DANGER : write many files and delete old assets !!!
 
+    console = init_console()
+    printc = console.print
+
     sync_path = Path(path).expanduser().resolve()
     if sync_path.exists():
         raise CommandError(f"<red>Sync path <green>{sync_path}</green> exists</red>")
@@ -146,6 +154,9 @@ def git_sync(api: WikiJsApi, path: Path) -> None:
     # if Path.cwd().joinpath('.git').exists():
     #     printc(f"Current path is a git repo. Exit")
     #     return
+
+    console = init_console()
+    printc = console.print
 
     repo_path = Path(path).expanduser().resolve()
     printc(f"<blue>Git repository path</blue> <green>{repo_path}</green>")

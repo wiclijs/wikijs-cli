@@ -30,7 +30,7 @@ from . import config
 from . import query as Q
 from .date import date2str
 from .node import Node
-from .printer import html_escape, printc
+from .printer import init_console
 
 LINESEP = os.linesep
 
@@ -892,10 +892,11 @@ class WikiJsApi:
     ##############################################
 
     def query_wikijs(self, query: dict) -> dict:
+        console = init_console()
         query['query'] = Q.clean_query(query['query'])
         if config.DEBUG:
             _ = Q.dump_query(query)
-            printc(f"<blue>API Query:</blue> {_}")
+            console.print(f"<blue>API Query:</blue> {_}")
         response = requests.post(f'{self._api_url}/graphql', json=query, headers=self._headers)
         # if response.status_code != requests.codes.ok:
         #     raise NameError(f"Error {response}")
@@ -905,7 +906,7 @@ class WikiJsApi:
             path = '/'.join(d.get('path', ''))
             message = d['message']
             stacktrace = LINESEP.join(d['extensions']['exception']['stacktrace'])
-            stacktrace = html_escape(stacktrace)
+            # ! stacktrace = html_escape(stacktrace)
             location = d['locations'][0]['column']
             query_ = query['query']
             query_location = query_[max(0, location - 1):min(location + 20, len(query_))]
