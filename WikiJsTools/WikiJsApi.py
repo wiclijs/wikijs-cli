@@ -901,7 +901,7 @@ class WikiJsApi:
         query['query'] = Q.clean_query(query['query'])
         if config.DEBUG:
             _ = Q.dump_query(query)
-            console.print(f"<blue>API Query:</blue> {_}")
+            console.print(f"[blue]API Query:[/] {_}")
         response = requests.post(f'{self._api_url}/graphql', json=query, headers=self._headers)
         # if response.status_code != requests.codes.ok:
         #     raise NameError(f"Error {response}")

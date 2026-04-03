@@ -71,11 +71,11 @@ def sync_asset(api: WikiJsApi, path: Path, exist_ok: bool = False) -> None:
     printc = console.print
 
     asset_path = Path(path).expanduser().resolve()
-    printc(f"<blue>Sync asset path</blue> <green>{asset_path}</green>")
+    printc(f"[blue]Sync asset path[/] [green]{asset_path}[/]")
 
     # Protection
     if asset_path.exists() and not exist_ok:
-        raise CommandError(f"<red>Asset path <green>{asset_path}</green> exists</red>")
+        raise CommandError(f"[red]Asset path [green]{asset_path}[/] exists[/]")
     asset_path.mkdir(parents=True, exist_ok=exist_ok)
 
     # Collect current asset list on disk
@@ -105,7 +105,7 @@ def sync_asset(api: WikiJsApi, path: Path, exist_ok: bool = False) -> None:
         # asset.created_at.timestamp()
         mtime = asset.updated_at.timestamp()
         if not (path.exists() and path.stat().st_mtime == mtime):
-            printc(f"Write <green>{asset.path}</green>")
+            printc(f"Write [green]{asset.path}[/]")
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_bytes(data)
             os.utime(path, (mtime, mtime))
@@ -126,8 +126,8 @@ def sync(api: WikiJsApi, path: Path) -> None:
 
     sync_path = Path(path).expanduser().resolve()
     if sync_path.exists():
-        raise CommandError(f"<red>Sync path <green>{sync_path}</green> exists</red>")
-    printc(f"<blue>Sync path</blue> <green>{sync_path}</green>")
+        raise CommandError(f"[red]Sync path [green]{sync_path}[/] exists[/]")
+    printc(f"[blue]Sync path[/] [green]{sync_path}[/]")
     # Protection
     sync_path.mkdir(exist_ok=False)
 
@@ -136,7 +136,7 @@ def sync(api: WikiJsApi, path: Path) -> None:
         file_path = page.sync(sync_path)
         if file_path is not None:
             _ = file_path.relative_to(sync_path)
-            printc(f"Wrote <green>{_}</green>")
+            printc(f"Wrote [green]{_}[/]")
         # else is up to date
 
     asset_path = sync_path.joinpath('_assets')
@@ -159,16 +159,16 @@ def git_sync(api: WikiJsApi, path: Path) -> None:
     printc = console.print
 
     repo_path = Path(path).expanduser().resolve()
-    printc(f"<blue>Git repository path</blue> <green>{repo_path}</green>")
+    printc(f"[blue]Git repository path[/] [green]{repo_path}[/]")
 
     created = False
     if repo_path.exists():
         # Protection
         if not repo_path.joinpath('.git').exists():
-            raise CommandError(f"<red> Directory <green>{repo_path}</green> is not a git repository</red>")
+            raise CommandError(f"[red] Directory [green]{repo_path}[/] is not a git repository[/]")
         if not repo_path.joinpath(HISTORY_JSON).exists():
-            raise CommandError(f"<red> Directory <green>{repo_path}</green> doesn't have a JSON history</red>")
-        printc("<blue>Git already initialised</blue>")
+            raise CommandError(f"[red] Directory [green]{repo_path}[/] doesn't have a JSON history[/]")
+        printc("[blue]Git already initialised[/]")
     else:
         repo_path.mkdir()
         created = True
@@ -198,19 +198,19 @@ def git_sync(api: WikiJsApi, path: Path) -> None:
             # How versionID are generated ???
             # last_version_id = last_version['versionId']
             last_version_date = datetime.fromisoformat(last_version['versionDate'])
-        printc(f"Last version date <blue>{last_version_date}</blue>")
+        printc(f"Last version date [blue]{last_version_date}[/]")
         last_commit_date = get_last_commit_date(repo_path)
-        printc(f"Last commit date <blue>{last_commit_date}</blue>")
+        printc(f"Last commit date [blue]{last_commit_date}[/]")
 
     # Fixme: progress callback
     #  how to get number of versions ?
     def progress_callback(p: int) -> None:
-        printc(f"<blue>{p} % done</blue>")
+        printc(f"[blue]{p} % done[/]")
 
     # Fixme: skip ?
-    printc("<blue>Get page histories...</blue>")
+    printc("[blue]Get page histories...[/]")
     history = api.history(progress_callback)
-    printc("<blue>...Done</blue>")
+    printc("[blue]...Done[/]")
 
     # Commit page history
     for ph in history:
@@ -224,8 +224,8 @@ def git_sync(api: WikiJsApi, path: Path) -> None:
         is_moved = ph.is_moved
         if is_moved:
             old_upath, new_upath = cast(tuple[str, str], is_moved)
-            printc(f'<blue>moved</blue> @{page.locale} "<green>{old_upath}</green>" -> "<green>{new_upath}</green>"')
-            # Fixme: f'{ph.date_utc_str} <blue>move</blue> @{page.locale} {ph.old_path} -> {ph.new_path}'
+            printc(f'[blue]moved[/] @{page.locale} "[green]{old_upath}[/]" -> "[green]{new_upath}[/]"')
+            # Fixme: f'{ph.date_utc_str} [blue]move[/] @{page.locale} {ph.old_path} -> {ph.new_path}'
             old_path = page.file_path(repo_path, old_upath)
             if old_path.exists():
                 new_path = page.file_path(repo_path, new_upath)
@@ -240,7 +240,7 @@ def git_sync(api: WikiJsApi, path: Path) -> None:
                 message = f'move @{page.locale} "{ph.old_path}" -> "{ph.new_path}"'
                 commit(ph.date, message)
             else:
-                raise CommandError(f"<red>Error <green>{old_upath}</green> is missing</red>")
+                raise CommandError(f"[red]Error [green]{old_upath}[/] is missing[/]")
         else:
             if ph.is_initial:
                 action = 'create'
@@ -250,7 +250,7 @@ def git_sync(api: WikiJsApi, path: Path) -> None:
                 action = 'metadata edit'
             else:
                 action = 'ghost'
-            printc(f'{ph.date_utc_str} <blue>{action}</blue> @{page.locale} <green>{page.path}</green>')
+            printc(f'{ph.date_utc_str} [blue]{action}[/] @{page.locale} [green]{page.path}[/]')
             file_path = ph.sync(repo_path, check_exists=False)
             git_('add', file_path)
             message = f'{action} @{page.locale} {page.path}'
@@ -263,7 +263,7 @@ def git_sync(api: WikiJsApi, path: Path) -> None:
     #  so we rewrite...
     sync_asset(api, asset_path, exist_ok=True)
 
-    printc("<blue>Clean old path</blue>")
+    printc("[blue]Clean old path[/]")
     for root, direnames, _ in repo_path.walk():
         if root == repo_path:
             direnames.remove('.git')
@@ -273,7 +273,7 @@ def git_sync(api: WikiJsApi, path: Path) -> None:
                 break
             else:
                 _ = path.relative_to(repo_path)
-                printc(f"<green>{_}</green> <orange>is empty</orange>")
+                printc(f"[green]{_}[/] <orange>is empty</orange>")
                 path.rmdir()
                 path = path.parent  # Fixme: ty
 

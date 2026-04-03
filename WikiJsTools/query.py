@@ -13,7 +13,7 @@
 import os
 import re
 
-from .printer import html_escape
+# from .printer import html_escape
 
 LINESEP = os.linesep
 
@@ -30,16 +30,17 @@ def dump_query(query: dict, colourize: bool = True) -> str:
     if colourize:
         colour = 'blue'
         for c in '(){}:,$!':
-            query_str = query_str.replace(c, f'<{colour}>{c}</{colour}>')
+            query_str = query_str.replace(c, f'[{colour}]{c}[/]')
 
     # Fixme: html_escape / colourize
-    variables = LINESEP.join([f'    {key}: {html_escape(value)}' for key, value in variables.items()])
+    # variables = LINESEP.join([f'    {key}: {html_escape(value)}' for key, value in variables.items()])
+    variables = LINESEP.join([f'    {key}: {value}' for key, value in variables.items()])
     if variables:
         if colourize:
             colour = 'blue'
             for c in "{}:,'":
-                variables = variables.replace(c, f'<{colour}>{c}</{colour}>')
-            with_ = f"<{colour}>with</{colour}>"
+                variables = variables.replace(c, f'[{colour}]{c}[/]')
+            with_ = f"[{colour}]with[/]"
         else:
             with_ = "with"
 
