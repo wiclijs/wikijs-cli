@@ -393,6 +393,8 @@ class WikiJsFuse(fuse.LoggingMixIn, fuse.Operations):
                 folder_id = folder.id
             items: PageTreeItemDict = {_.path_with_ext.name: _ for _ in self._api.itree(folder_id)}
             # items: PageTreeItemDict = {_.path.name: _ for _ in self._api.itree(folder_id)}
+            folder_page: PageTreeItemDict = {_.page_path.name: _ for _ in items.values() if _.is_folder_page}
+            items.update(folder_page)
             cache.append(items)
         return cache
 
@@ -449,7 +451,7 @@ class WikiJsFuse(fuse.LoggingMixIn, fuse.Operations):
                 item = cache[-1][opath.name]
             except KeyError as e:
                 raise fuse.FuseOSError(errno.ENOENT) from e
-            if item.isFolder:
+            if item.isFolder and not opath.suffix:
                 return dict(
                     st_mode=(stat.S_IFDIR | 0o755),
                     st_ctime=mount_time,

@@ -103,6 +103,17 @@ class PageTreeItem:
         _ = self.path
         return _.parent / (_.name if self.isFolder else _.name + '.md')
 
+    ##############################################
+
+    @property
+    def is_folder_page(self) -> bool:
+        return self.isFolder and self.pageId is not None
+
+    @property
+    def page_path(self) -> PurePosixPath:
+        _ = self.path
+        return _.parent / (_.name + '.md')
+
 ####################################################################################################
 
 class BasePageProtocol(Protocol):
