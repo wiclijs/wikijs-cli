@@ -241,6 +241,7 @@ class BasePage(BasePageProtocol):
             # Check updatedAt
             file_date = None
             if file_path.exists():
+                # Fixme: read_text ???
                 with open(file_path) as fh:
                     for line in fh:
                         if line.startswith('updatedAt'):
@@ -329,8 +330,11 @@ class BasePage(BasePageProtocol):
         path = Path(dst)
         data = self.export()
         path.parent.mkdir(parents=True, exist_ok=True)
+        # note: folder date is updated when it changes !
         # if not path.exists():
         path.write_text(data, encoding='utf8')
+        mtime = self.updated_at.timestamp()
+        os.utime(path, times=(mtime, mtime))
         return path
 
     ##############################################
