@@ -443,9 +443,9 @@ class Cli:
         self._init()
         if path == '..':
             if not self._current_asset_folder.is_root:
-                self._current_asset_folder = cast(WikiNode, self._current_asset_folder.parent)
+                self._current_asset_folder = cast(AssetNode, self._current_asset_folder.parent)
         else:
-            _ = cast(WikiNode, self._current_asset_folder.find(path))
+            _ = cast(AssetNode, self._current_asset_folder.find(path))
             if _.is_leaf:
                 self.print(f"[red]Error: [/] [blue]{path}[/] [red]is not a folder[/]")
             self._current_asset_folder = _
