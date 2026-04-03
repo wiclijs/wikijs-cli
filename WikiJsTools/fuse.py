@@ -23,20 +23,23 @@ __all__ = ['mount']
 ####################################################################################################
 
 import ctypes
+import errno
 import logging
 import os
-from collections import defaultdict
+import stat
 from collections.abc import Iterable
-from errno import ENOENT
 from pathlib import PurePosixPath
-from stat import S_IFDIR, S_IFREG
 from time import time
 from typing import Any, cast
 
 # https://github.com/mxmlnkn/mfusepy
 import mfusepy as fuse
 
-from .WikiJsApi import Page, WikiJsApi
+from .WikiJsApi import Page, PageTreeItem, WikiJsApi
+
+####################################################################################################
+
+type PageTreeItemDict = dict[str, PageTreeItem]
 
 ####################################################################################################
 
@@ -62,33 +65,20 @@ def ensure_buffer_size(data: bytes, length: int) -> bytes:
 
 ####################################################################################################
 
-class VirtualDirectory:
-
-    _logger = _module_logger.getChild('VirtualDirectory')
+class VirtualBase:  # noqa: B903
 
     ##############################################
 
-    def __init__(self, wfuse: 'WikiJsFuse', path: str, mode: int = 0o755) -> None:
+    def __init__(self, wfuse: 'WikiJsFuse', path: str) -> None:
         self._wfuse = wfuse
         path = str(path)
         self._path = PurePosixPath(path)
-        # self._fd = int(fd)
-
-        # now = time()
-        now = self._wfuse._mount_time
-        self._stat = dict(
-            st_mode=(S_IFDIR | mode),
-            st_ctime=now,
-            st_mtime=now,
-            st_atime=now,
-            st_nlink=2,
-        )
 
     ##############################################
 
-    # @property
-    # def fd(self) -> int:
-    #     return self._fd
+    @property
+    def _api(self) -> WikiJsApi:
+        return self._wfuse._api
 
     @property
     def path(self) -> PurePosixPath:
@@ -99,21 +89,67 @@ class VirtualDirectory:
         return str(self._path)
 
     @property
+    def name(self) -> str:
+        return self._path.name
+
+    @property
+    def stat(self) -> dict:
+        raise NotImplementedError
+
+    ##############################################
+
+    # Fixme: is_wiki_page is already defined
+    # @property
+    # def is_wiki_page(self) -> bool:
+    #     return False
+
+    @property
+    def created(self) -> bool:
+        return True
+
+####################################################################################################
+
+class VirtualDirectory(VirtualBase):
+
+    _logger = _module_logger.getChild('VirtualDirectory')
+
+    ##############################################
+
+    def __init__(self, wfuse: 'WikiJsFuse', path: str, mode: int = 0o755) -> None:
+        super().__init__(wfuse, path)
+        # self._fd = int(fd)
+        # now = time()
+        now = self._wfuse._mount_time
+        self._stat = dict(
+            st_mode=(stat.S_IFDIR | mode),
+            st_ctime=now,
+            st_mtime=now,
+            st_atime=now,
+            st_nlink=2,
+            # set_uid=os.getuid(),
+            # set_gid=os.getgid(),
+        )
+
+    ##############################################
+
+    # @property
+    # def fd(self) -> int:
+    #     return self._fd
+
+    @property
     def stat(self) -> dict:
         return self._stat
 
 ####################################################################################################
 
-class VirtualFile:
+class VirtualFile(VirtualBase):
 
     _logger = _module_logger.getChild('VirtualFile')
 
     ##############################################
 
     def __init__(self, wfuse: 'WikiJsFuse', path: str, fd: int, create: bool, mode: int = 0o644) -> None:
-        self._wfuse = wfuse
-        path = str(path)
-        self._path = PurePosixPath(path)
+        super().__init__(wfuse, path)
         self._fd = int(fd)
         self._created = create
         self._page: Page | None = None
@@ -128,12 +164,14 @@ class VirtualFile:
             # self._data = b''
             now = time()
             self._stat = dict(
-                st_mode=(S_IFREG | mode),
+                st_mode=(stat.S_IFREG | mode),
                 st_ctime=now,
                 st_mtime=now,
                 st_atime=now,
                 st_nlink=1,
                 st_size=0,
+                # set_uid=uid,
+                # set_gid=gid,
             )
 
     ##############################################
@@ -141,7 +179,7 @@ class VirtualFile:
     @classmethod
     def page_stat(self, page) -> dict[str, Any]:
         return dict(
-            st_mode=(S_IFREG | 0o644),   # Fixme: mode
+            st_mode=(stat.S_IFREG | 0o644),   # Fixme: mode
             st_ctime=page.created_at.timestamp(),
             st_mtime=page.updated_at.timestamp(),
             # st_atime=mount_time,
@@ -151,10 +189,6 @@ class VirtualFile:
         )
 
     ##############################################
-
-    @property
-    def _api(self) -> WikiJsApi:
-        return self._wfuse._api
 
     @property
     def created(self) -> bool:
@@ -169,18 +203,6 @@ class VirtualFile:
         return self._fd
 
     @property
-    def path(self) -> PurePosixPath:
-        return self._path
-
-    @property
-    def name(self) -> str:
-        return self._path.name
-
-    @property
-    def path_str(self) -> str:
-        return str(self._path)
-
-    @property
     def stat(self) -> dict:
         return self._stat
 
@@ -192,6 +214,10 @@ class VirtualFile:
         return self._data
 
     ##############################################
+
+    # @property
+    # def is_wiki_page(self) -> bool:
+    #     return not self._created
 
     @property
     def is_wiki_page(self) -> bool:
@@ -275,6 +301,41 @@ class VirtualFile:
 
 ####################################################################################################
 
+class VirtualSymLink(VirtualBase):
+
+    _logger = _module_logger.getChild('VirtualSymLink')
+
+    ##############################################
+
+    def __init__(self, wfuse: 'WikiJsFuse', target: str, source: str) -> None:
+        super().__init__(wfuse, target)
+        self._source = source
+        self._time = time()
+
+    ##############################################
+
+    @property
+    def target(self) -> str:
+        return self.path_str
+
+    @property
+    def source(self) -> str:
+        return self._source
+
+    @property
+    def stat(self) -> dict:
+        # Fixme: ok ?
+        return dict(
+            st_mode=(stat.S_IFLNK | 0o666),
+            st_nlink=1,
+            st_size=len(self._source),
+            st_atime=self._time,
+            st_ctime=self._time,
+            st_mtime=self._time,
+        )
+
+####################################################################################################
+
 # Use log_callback instead of LoggingMixIn !
 class WikiJsFuse(fuse.LoggingMixIn, fuse.Operations):
 
@@ -287,25 +348,20 @@ class WikiJsFuse(fuse.LoggingMixIn, fuse.Operations):
     def __init__(self, api: WikiJsApi) -> None:
         self._api = api
         self._mount_time = time()
-        self._file_by_path: dict[str, VirtualDirectory | VirtualFile] = {
+        self._file_by_path: dict[str, VirtualBase] = {
             '/': VirtualDirectory(self, '/')
         }
         self._file_by_fd: dict[int, VirtualFile] = {}
         self._last_fd = 0
-        # Fixme:
-        self.data = defaultdict(str)
-        # now = time()
-        # self._files['/'] = dict(
-        #     st_mode=(S_IFDIR | 0o755),
-        #     st_ctime=now,
-        #     st_mtime=now,
-        #     st_atime=now,
-        #     st_nlink=2,
-        # )
+        # uid, gid, _pid = fuse.fuse_get_context()
 
     ##############################################
 
     def new_fd(self, path: str, create: bool) -> VirtualFile:
+        """Return a `VirtualFile` instance for path.
+        The parameter `create` specifies if it is a Wiki page or a new file.
+        It increments a new fd.
+        """
         self._last_fd += 1
         file = VirtualFile(self, path, self._last_fd, create)
         self._file_by_path[file.path_str] = file
@@ -319,15 +375,18 @@ class WikiJsFuse(fuse.LoggingMixIn, fuse.Operations):
     #     for item in items:
     #         print(item.id, item.path, item.isFolder)
 
-    def _query_folder(self, path: PurePosixPath) -> list[dict]:
-        cache = []
+    def _query_folder(self, path: PurePosixPath) -> list[PageTreeItemDict]:
+        """Build a list for each part of the path,
+        where each item is a map with folder's child name -> `PageTreeItem`.
+        """
+        cache: list[PageTreeItemDict] = []
         for i, part in enumerate(path.parts):
             if i == 0:
                 folder_id = 0
             else:
                 folder = cache[i - 1][part]
                 folder_id = folder.id
-            items = {_.path.name: _ for _ in self._api.itree(folder_id)}
+            items: PageTreeItemDict = {_.path.name: _ for _ in self._api.itree(folder_id)}
             cache.append(items)
         return cache
 
@@ -354,7 +413,6 @@ class WikiJsFuse(fuse.LoggingMixIn, fuse.Operations):
     @fuse.overrides(fuse.Operations)
     def create(self, path: str, mode: int, fi=None) -> int:
         self._logger.info(f"create '{path}' mode={mode} fi={fi}")
-        # uid, gid, _pid = fuse.fuse_get_context()
         file = self.new_fd(path, create=True)
         return file.fd
 
@@ -366,7 +424,7 @@ class WikiJsFuse(fuse.LoggingMixIn, fuse.Operations):
         """Get file attributes. Similar to stat()"""
         self._logger.info(f"getattr '{path}' fd={fd}")
         # if path not in self._files:
-        #     raise FuseOSError(ENOENT)
+        #     raise FuseOSError(errno.ENOENT)
         # return self._files[path]
         if fd is not None:
             return self._file_by_fd[fd].stat
@@ -382,10 +440,10 @@ class WikiJsFuse(fuse.LoggingMixIn, fuse.Operations):
                 # print(f"Cache {cache[-1]}")
                 item = cache[-1][opath.name]
             except KeyError as e:
-                raise fuse.FuseOSError(ENOENT) from e
+                raise fuse.FuseOSError(errno.ENOENT) from e
             if item.isFolder:
                 return dict(
-                    st_mode=(S_IFDIR | 0o755),
+                    st_mode=(stat.S_IFDIR | 0o755),
                     st_ctime=mount_time,
                     st_mtime=mount_time,
                     st_atime=mount_time,
@@ -463,12 +521,14 @@ class WikiJsFuse(fuse.LoggingMixIn, fuse.Operations):
     def readdir(self, path: str, fd: int) -> fuse.ReadDirResult:
         self._logger.info(f"readdir '{path}' fd={fd}")
         opath = PurePosixPath(path)
+        # Fixme: efficiency...
         in_memory_file = []
         for file in self._file_by_path.values():
             fpath = file.path
             if file.path_str == '/':
                 continue
-            if (isinstance(file, VirtualDirectory) or file.created) and fpath.parent == opath:
+            # if not file.is_wiki_page and fpath.parent == opath:
+            if file.created and fpath.parent == opath:
                 in_memory_file.append(fpath.name)
         entries = ['.', '..'] + in_memory_file
         try:
@@ -484,7 +544,7 @@ class WikiJsFuse(fuse.LoggingMixIn, fuse.Operations):
     @fuse.overrides(fuse.Operations)
     def readlink(self, path: str) -> str:
         self._logger.info(f"readlink '{path}'")
-        return self.data[path]
+        return cast(VirtualSymLink, self._file_by_path[path]).source
 
     ##############################################
 
@@ -547,14 +607,11 @@ class WikiJsFuse(fuse.LoggingMixIn, fuse.Operations):
 
     @fuse.overrides(fuse.Operations)
     def symlink(self, target: str, source: str) -> int:
-        # Fixme: Emacs create symlinks...
+        # Emacs create dangling symlinks .#fuse.py -> user@foo.home.16159:1775212383
         self._logger.info(f"symlink '{target}' -> '{source}'")
-        # self._files[target] = dict(
-        #     st_mode=(S_IFLNK | 0o777),
-        #     st_nlink=1,
-        #     st_size=len(source),
-        # )
-        # self.data[target] = source
+        self._file_by_path[target] = VirtualSymLink(self, target, source)
+        # Fixme: add in virtual directory cf. readdir
+        #   operation to read link ???
         return 0
 
     ##############################################
@@ -574,7 +631,7 @@ class WikiJsFuse(fuse.LoggingMixIn, fuse.Operations):
     @fuse.overrides(fuse.Operations)
     def unlink(self, path: str) -> int:
         self._logger.info(f"unlink '{path}'")
-        # self._file_by_path.pop(path)
+        self._file_by_path.pop(path)
         return 0
 
     ##############################################
