@@ -265,7 +265,7 @@ class BasePage(BasePageProtocol):
     @classmethod
     def import_tags(cls, tags: str) -> list[str]:
         if tags[0] != '[' or tags[-1] != ']':
-            raise ValueError()
+            raise ValueError("Invalid tag format")
 
         def on_tag(tag):
             tag = tag.strip()
@@ -273,7 +273,7 @@ class BasePage(BasePageProtocol):
                 raise ValueError()
             return tag[1:-1]
 
-        return [on_tag(_) for _ in tags[1:-1].split(',')]
+        return [on_tag(_) for _ in tags[1:-1].split(',') if _]
 
     ##############################################
 
