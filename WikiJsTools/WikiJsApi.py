@@ -6,21 +6,23 @@
 #
 ####################################################################################################
 
-__all__ = ['ApiError', 'WikiJsApi', 'Node', 'Page']
+__all__ = ['ApiError', 'WikiJsApi', 'WikiNode', 'Page']
 
 # Fime: use PurePosixPath
 
 ####################################################################################################
 
+# from pprint import pprint
+
+import os
+import types
+from collections.abc import Iterator
 from dataclasses import dataclass
 from datetime import datetime
 from functools import wraps
 from pathlib import Path, PurePosixPath
-# from pprint import pprint
-from typing import Any, Iterator, cast
-
-import os
-import types
+from time import time
+from typing import Any, Protocol, cast
 
 import requests
 
@@ -28,8 +30,7 @@ from . import config
 from . import query as Q
 from .date import date2str
 from .node import Node
-from .printer import printc, html_escape
-from time import time
+from .printer import html_escape, printc
 
 LINESEP = os.linesep
 
@@ -39,6 +40,14 @@ LINESEP = os.linesep
 #  !
 #    By default, all value types in GraphQL can result in a null value.
 #    If a value type includes an exclamation point, it means that value cannot be null.
+
+####################################################################################################
+
+# Fixme: how to solve parent childs ???
+class WikiNode(Node):
+    def __init__(self, name: str = '') -> None:
+        super().__init__(name)
+        self.page: type['Page'] | None = None
 
 ####################################################################################################
 
@@ -90,9 +99,17 @@ class PageTreeItem:
 
 ####################################################################################################
 
-class BasePage:
+class BasePageProtocol(Protocol):
+    api: 'WikiJsApi'
+    content: str
+    contentType: str
+    locale: str
+    path: PurePosixPath
+    updated_at: datetime
 
-    RULE = '-'*50
+class BasePage(BasePageProtocol):
+
+    RULE = '-' * 50
 
     ##############################################
 
@@ -132,10 +149,7 @@ class BasePage:
 
     # Fixme: is_same_metadata
     def same_metadata(self, obj: 'BasePage') -> bool:
-        for _ in self.METADATA_ATTRIBUTES:
-            if getattr(self, _) != getattr(obj, _):
-                return False
-        return True
+        return all(getattr(self, _) == getattr(obj, _) for _ in self.METADATA_ATTRIBUTES)
 
     ##############################################
 
@@ -154,7 +168,7 @@ class BasePage:
             cls,
             dst: Path | str,
             locale: str,
-            path: str | None = None,
+            path: PurePosixPath | str,
             content_type: str = 'markdown',
     ) -> Path:
         _ = str(path).split('/')
@@ -165,9 +179,8 @@ class BasePage:
 
     def file_path(self, dst: Path | str, path: str | None = None) -> Path:
         # Note: path is used to move page version
-        if path is None:
-            path = self.path
-        return self.file_path_impl(dst, self.locale, path, self.contentType)
+        path_ = path if path is not None else self.path
+        return self.file_path_impl(dst, self.locale, path_, self.contentType)
 
     ##############################################
 
@@ -222,14 +235,14 @@ class BasePage:
             # Check updatedAt
             file_date = None
             if file_path.exists():
-                with open(file_path, 'r') as fh:
+                with open(file_path) as fh:
                     for line in fh:
                         if line.startswith('updatedAt'):
                             i = line.find(':')
-                            _ = line[i+1:].strip()
+                            _ = line[i + 1:].strip()
                             file_date = datetime.fromisoformat(_)
                             break
-            if file_date is not None:
+            if file_date is not None:  # noqa: SIM102
                 # print(f'{self.path} | {old_date} vs {new_date}')
                 if file_date == self.updated_at:
                     return
@@ -246,11 +259,13 @@ class BasePage:
     def import_tags(cls, tags: str) -> list[str]:
         if tags[0] != '[' or tags[-1] != ']':
             raise ValueError()
+
         def on_tag(tag):
             tag = tag.strip()
             if tag[0] != tag[-1] != "'":
                 raise ValueError()
             return tag[1:-1]
+
         return [on_tag(_) for _ in tags[1:-1].split(',')]
 
     ##############################################
@@ -327,7 +342,7 @@ class BasePage:
             else:
                 index = sline.find(":")
                 key = sline[:index].strip()
-                value = sline[index+1:].strip()
+                value = sline[index + 1:].strip()
                 match key:
                     case 'id':
                         if value:
@@ -340,11 +355,11 @@ class BasePage:
         content = lines[offset:]
         # Ensure trailing line sep
         # content = content.strip() + LINESEP
-        #! data['content'] = content
+        # ! data['content'] = content
         # print('pprint data')
         # pprint(data)
         # pprint(content)
-        page = Page(api, **data)  # ty:ignore[invalid-argument-type]
+        page = Page(api, **data)  # ty:ignore[invalid-argument-type] due to dict type
         page._content = content
         return page
 
@@ -381,23 +396,23 @@ class Page(BasePage):
 
     id: int | None = None
 
-    publishStartDate: str| None = None
-    publishEndDate: str| None = None
+    publishStartDate: str | None = None
+    publishEndDate: str | None = None
 
-    authorId: int| None = None
-    authorName: str| None = None
-    authorEmail: str| None = None
+    authorId: int | None = None
+    authorName: str | None = None
+    authorEmail: str | None = None
 
-    creatorId: int| None = None
-    creatorName: str| None = None
-    creatorEmail: str| None = None
+    creatorId: int | None = None
+    creatorName: str | None = None
+    creatorEmail: str | None = None
 
-    hash: str| None = None
-    render: str| None = None
-    editor: str| None = None
-    scriptCss: str| None = None
-    scriptJs: str| None = None
-    toc: str| None = None
+    hash: str | None = None
+    render: str | None = None
+    editor: str | None = None
+    scriptCss: str | None = None
+    scriptJs: str | None = None
+    toc: str | None = None
 
     # see property
     # content: str = None
@@ -426,8 +441,8 @@ class Page(BasePage):
                 api=self.api,
                 page=self,
                 versionDate=self.updatedAt,
-                authorId=self.authorId,
-                authorName=self.authorName,
+                authorId=self.authorId,  # ty:ignore[invalid-argument-type] / due to None
+                authorName=self.authorName,  # ty:ignore[invalid-argument-type] / same
                 actionType='edit',
             )
             history = [current]
@@ -435,9 +450,9 @@ class Page(BasePage):
             number_of_versions = len(history)
             for i in range(number_of_versions):
                 if i + 1 < number_of_versions:
-                    history[i].prev = history[i+1]
+                    history[i].prev = history[i + 1]
                 if i > 0:
-                    history[i].next = history[i-1]
+                    history[i].next = history[i - 1]
             self._history = history
             # self._history_map = {_.versionId: _ for _ in self._history}
         return self._history
@@ -565,8 +580,8 @@ class PageHistory:
     valueAfter: str | None = None   # aka move path
 
     # history links
-    prev: 'PageHistory' = None
-    next: 'PageHistory' = None
+    prev: type['PageHistory'] | None = None
+    next: type['PageHistory'] | None = None
 
     ##############################################
 
@@ -649,7 +664,7 @@ class PageHistory:
     @property
     def is_moved(self) -> bool | tuple[str, str]:
         if self.actionType == 'moved':
-            return (self.valueBefore, self.valueAfter)
+            return (self.valueBefore, self.valueAfter)  # ty:ignore[invalid-return-type]
         # but a move action can also be
         prev = self.prev
         if prev is not None:
@@ -664,26 +679,26 @@ class PageHistory:
 
     @property
     def locale(self) -> str:
-        return self.wrapper.locale
+        return self.wrapper.locale  # ty:ignore[unresolved-attribute]
 
     @property
     def path(self) -> str:
-        return self.wrapper.path
+        return self.wrapper.path  # ty:ignore[unresolved-attribute, invalid-return-type]
 
     @property
     def path_str(self) -> str:
-        return self.wrapper.path_str
+        return self.wrapper.path_str  # ty:ignore[unresolved-attribute]
 
     @property
     def page_id(self) -> str:
-        return self.wrapper.id
+        return self.wrapper.id  # ty:ignore[unresolved-attribute, invalid-return-type]
 
     @property
     def content(self) -> str:
-        return self.wrapper.content
+        return self.wrapper.content  # ty:ignore[unresolved-attribute, invalid-return-type]
 
     def sync(self, *args, **kwargs) -> Path:
-        return self.wrapper.sync(*args, **kwargs)
+        return self.wrapper.sync(*args, **kwargs)  # ty:ignore[unresolved-attribute, invalid-return-type]
 
 ####################################################################################################
 
@@ -804,10 +819,7 @@ class WikiJsApi:
         # Space (use dashes instead)
         # Period (reserved for file extensions)
         # Unsafe URL characters (such as punctuation marks, quotes, math symbols, etc.)
-        for c in path:
-            if c in ' .,;!?&|+=*^~#%$@{}[]<>\\\'"':
-                return False
-        return True
+        return all(c not in ' .,;!?&|+=*^~#%$@{}[]<>\\\'"' for c in path)
 
     ##############################################
 
@@ -874,9 +886,9 @@ class WikiJsApi:
             stacktrace = LINESEP.join(d['extensions']['exception']['stacktrace'])
             stacktrace = html_escape(stacktrace)
             location = d['locations'][0]['column']
-            query = query['query']
-            query_location = query[max(0, location-1):min(location+20, len(query))]
-            message = f'{stacktrace}{LINESEP}{LINESEP}Path: {path}{LINESEP}@ {query_location}...{LINESEP}{LINESEP}{message}'
+            query_ = query['query']
+            query_location = query_[max(0, location - 1):min(location + 20, len(query_))]
+            message = f'{stacktrace}{LINESEP}{LINESEP}Path: {path}{LINESEP}@ {query_location}...{LINESEP}{LINESEP}{message}'  # noqa: E501
             raise ApiError(message)
         else:
             return data
@@ -930,7 +942,7 @@ class WikiJsApi:
 
     ##############################################
 
-    def _to_path(self, path: str) -> str:
+    def _to_path(self, path: PurePosixPath | str) -> str:
         path = str(path)
         # remove / from cd
         if path.startswith('/'):
@@ -940,7 +952,7 @@ class WikiJsApi:
     ##############################################
 
     @cache(cache_name='page')
-    def page(self, path: str, locale: str = 'fr') -> Page:
+    def page(self, path: PurePosixPath | str, locale: str = 'fr') -> Page:
         path = self._to_path(path)
         query = {
             'variables': {
@@ -1006,7 +1018,7 @@ class WikiJsApi:
             'query': Q.PAGE_VERSION,
         }
         data = self.query_wikijs(query)
-        _ = xpath(data, 'data/pages/version')
+        _ = cast(dict, xpath(data, 'data/pages/version'))
         return PageVersion(api=self, page=page_history.page, **_)
 
     ##############################################
@@ -1041,7 +1053,7 @@ class WikiJsApi:
         page.id = int(_['id'])
         page.createdAt = _['createdAt']
         page.updatedAt = _['updatedAt']
-        _ = xpath(data, 'data/pages/create/responseResult')
+        _ = cast(dict, xpath(data, 'data/pages/create/responseResult'))
         return ResponseResult(**_)
 
     ##############################################
@@ -1081,7 +1093,7 @@ class WikiJsApi:
 
     ##############################################
 
-    def move_page(self, page: Page, path: str, locale: str = 'fr') -> ResponseResult:
+    def move_page(self, page: Page, path: PurePosixPath | str, locale: str = 'fr') -> ResponseResult:
         query = {
             'variables': {
                 'id': page.id,
@@ -1093,7 +1105,7 @@ class WikiJsApi:
         # pprint(query)
         data = self.query_wikijs(query)
         # pprint(data)
-        _ = xpath(data, 'data/pages/move/responseResult')
+        _ = cast(dict, xpath(data, 'data/pages/move/responseResult'))
         return ResponseResult(**_)
 
     ############################################################################
@@ -1134,7 +1146,7 @@ class WikiJsApi:
 
     ##############################################
 
-    def tree(self, path: str) -> Iterator[PageTreeItem]:
+    def tree(self, path: PurePosixPath | str) -> Iterator[PageTreeItem]:
         """List the pages and folders in the parent of the page at `path`.
         When `includeAncestors` is True, the parent directories are also listed.
         """
@@ -1174,9 +1186,9 @@ class WikiJsApi:
 
     ##############################################
 
-    def build_page_tree(self, progress_bar_cls) -> Node:
+    def build_page_tree(self, progress_bar_cls) -> WikiNode:
         # Runnning time is proportionnal to the number of pages
-        root = Node()
+        root = WikiNode()
 
         def process_page(page: Page) -> None:
             # print('-'*10)
@@ -1189,13 +1201,13 @@ class WikiJsApi:
                     node = parent[_]
                 except KeyError:
                     # add directory
-                    node = Node(_)
+                    node = WikiNode(_)
                     node.page = None
                     parent.add_child(node)
                 # print(f'{parent} // {node}')
                 parent = node
             # parent is leaf
-            parent.page = page
+            parent.page = page  # ty:ignore[unresolved-attribute] / parent is Node not WikiNode...
 
         pages = self.list_pages()
         if progress_bar_cls is not None:
@@ -1211,13 +1223,13 @@ class WikiJsApi:
     ##############################################
 
     def search(self, query: str) -> PageSearchResponse:
-        query = {
+        query_ = {
             'variables': {
                 'query': query,
             },
             'query': Q.SEARCH_PAGE,
         }
-        data = self.query_wikijs(query)
+        data = self.query_wikijs(query_)
         results = [PageSearchResult(**_) for _ in cast(dict, xpath(data, 'data/pages/search/results'))]
         _ = {
             key: value
@@ -1244,7 +1256,7 @@ class WikiJsApi:
             print(f'{page.path}')
             for _ in page.history:
                 if preload_version:
-                    _.page_version
+                    _.page_version  # noqa: B018 / lazy loading...
                 history.append(_)
         history.sort(key=lambda _: _.date)
         # for _ in history:
@@ -1267,13 +1279,13 @@ class WikiJsApi:
     ##############################################
 
     def search_tags(self, query: str) -> list[str]:
-        query = {
+        query_ = {
             'variables': {
                 'query': query,
             },
             'query': Q.SEARCH_TAGS,
         }
-        data = self.query_wikijs(query)
+        data = self.query_wikijs(query_)
         return cast(list[str], xpath(data, 'data/pages/searchTags'))
 
     ############################################################################
@@ -1294,16 +1306,16 @@ class WikiJsApi:
 
     ##############################################
 
-    def build_asset_tree(self) -> Node:
+    def build_asset_tree(self) -> WikiNode:
         # We cannot implement a progress bar since we don't know the number of nodes.
         # A workaround would be to save the number of nodes in a config file.
         # And to use it for the next run.
 
-        root = Node()
+        root = WikiNode()
 
-        def process_folder(parent: Node, folder_id: int) -> None:
+        def process_folder(parent: WikiNode, folder_id: int) -> None:
             for _ in self.list_asset_subfolder(folder_id):
-                node = Node(_.name)
+                node = WikiNode(_.name)
                 parent.add_child(node)
                 process_folder(node, _.id)
 

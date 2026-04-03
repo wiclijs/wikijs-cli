@@ -12,11 +12,9 @@ __all__ = ['Cli']
 
 ####################################################################################################
 
-from pathlib import Path, PurePosixPath
-from pprint import pprint
-from typing import Iterable
-
 # import logging
+# from pprint import pprint
+
 import difflib
 import html
 import inspect
@@ -24,22 +22,24 @@ import os
 import re
 import subprocess
 import traceback
+from collections.abc import Iterable
+from pathlib import Path, PurePosixPath
+from typing import cast
 
 # See also [cmd — Support for line-oriented command interpreters — Python documentation](https://docs.python.org/3/library/cmd.html)
 # Python Prompt Toolkit](https://python-prompt-toolkit.readthedocs.io/en/master/)
-from prompt_toolkit import PromptSession, HTML
-from prompt_toolkit import print_formatted_text, shortcuts
-from prompt_toolkit.completion import WordCompleter, Completer, Completion, CompleteEvent
+from prompt_toolkit import PromptSession, shortcuts
+from prompt_toolkit.completion import CompleteEvent, Completer, Completion
 from prompt_toolkit.document import Document
+
 # from prompt_toolkit.formatted_text import FormattedText
 from prompt_toolkit.history import FileHistory
 from prompt_toolkit.shortcuts import ProgressBar
 
-from .WikiJsApi import WikiJsApi, ApiError, Node, Page
-from . import config
-from . import sync
-from .printer import STYLE, printc, CommandError
+from . import config, sync
+from .printer import STYLE, CommandError, printc
 from .unicode import usorted
+from .WikiJsApi import ApiError, Page, WikiJsApi, WikiNode
 
 ####################################################################################################
 
@@ -81,7 +81,7 @@ class CustomCompleter(Completer):
 
     ##############################################
 
-    def __init__(self, cli, commands: list[str]) -> Node:
+    def __init__(self, cli, commands: list[str]) -> None:
         self._cli = cli
         self._commands = commands
 
@@ -100,7 +100,7 @@ class CustomCompleter(Completer):
         index = line.rfind(separator)
         # "dump " -> ""
         # "dump /foo/b" -> "b"
-        return line[index+1:]
+        return line[index + 1:]
 
     def _get_word_before_cursor2(self, document, separator: str) -> str:
         return document.text_before_cursor
@@ -145,7 +145,7 @@ class CustomCompleter(Completer):
             # words = [_ for _ in line.split(' ') if _]
             # command = words[0]
             index = line.rfind(' ')
-            right_word = line[index+1:]
+            right_word = line[index + 1:]
             index = line.find(' ')
             command = line[:index]
             try:
@@ -162,7 +162,7 @@ class CustomCompleter(Completer):
         separator = ' '
         get_word_before_cursor = self._get_word_before_cursor1
 
-        def handle_cd(root_path, current_path, right_word, folder: bool):
+        def handle_cd(root_path, current_path, right_word, folder: bool) -> list[str]:
             if '/' in right_word:
                 nonlocal separator
                 separator = '/'
@@ -206,7 +206,7 @@ class CustomCompleter(Completer):
                     # Fixme: 'list[Tag]' type is list
                     # Fixme: tag can have space !
                     words = [_.tag for _ in self._cli._api.tags()]
-        yield from self._get_completions(document, complete_event, words, separator, get_word_before_cursor)
+        yield from self._get_completions(document, complete_event, words, separator, get_word_before_cursor)  # ty:ignore[invalid-argument-type]
 
 ####################################################################################################
 
@@ -245,10 +245,11 @@ class Cli:
         self.COMMANDS.sort()
         # self._completer = WordCompleter(self.COMMANDS)
         self._completer = CustomCompleter(self, self.COMMANDS)
-        self._page_tree = None
-        self._current_path = None
-        self._asset_tree = None
-        self._current_asset_folder = None
+        # ty: using | Node is a mess
+        self._page_tree: WikiNode = None  # ty:ignore[invalid-assignment]
+        self._asset_tree: WikiNode = None  # ty:ignore[invalid-assignment]
+        self._current_path: WikiNode = None  # ty:ignore[invalid-assignment]
+        self._current_asset_folder: WikiNode = None  # ty:ignore[invalid-assignment]
 
     ##############################################
 
@@ -270,7 +271,7 @@ class Cli:
             except ApiError as e:
                 self.print(f'API error: <red>{e}</red>')
             except CommandError as e:
-                self.print(e)
+                self.print(str(e))
             except Exception as e:
                 print(traceback.format_exc())
                 print(e)
@@ -283,10 +284,7 @@ class Cli:
 
     def run(self, query: str) -> bool:
         commands = filter(bool, [_.strip() for _ in query.split(';')])
-        for _ in commands:
-            if not self._run_line(_):
-                return False
-        return True
+        return all(self._run_line(_) for _ in commands)
 
     ##############################################
 
@@ -295,9 +293,8 @@ class Cli:
         self._init()
         self.print("<red>Done</red>")
 
-        if query:
-            if not self.run(query):
-                return
+        if query and not self.run(query):
+            return
 
         history = FileHistory(config.CLI_HISTORY_PATH)
         session = PromptSession(
@@ -311,7 +308,7 @@ class Cli:
                     ('class:prompt', '> '),
                 ]
                 query = session.prompt(
-                    message,
+                    message,  # ty:ignore[invalid-argument-type] /ty  bug ???
                     style=STYLE,
                 )
             # except KeyboardInterrupt:
@@ -332,7 +329,7 @@ class Cli:
 
     ##############################################
 
-    def _absolut_path(self, path: str) -> PurePosixPath:
+    def _absolut_path(self, path: PagePath) -> PurePosixPath:
         if not path.startswith('/') and self._current_path:
             path = self._current_path.join(path)
         return PurePosixPath(path)
@@ -374,21 +371,17 @@ class Cli:
 
     ##############################################
 
-    def _help(self, command: CommandName = None, show_parameters: bool = False) -> None:
+    def _help(self, command: CommandName, show_parameters: bool = False) -> None:
         func = getattr(self, command)
         # help(func)
         self.print(f'<green>{command:16}</green> <blue>{func.__doc__ or ''}</blue>')
         if show_parameters:
             signature = inspect.signature(func)
             for _ in signature.parameters.values():
-                if _.default != inspect._empty:
-                    default = f' = <orange>{_.default}</orange>'
-                else:
-                    default = ''
+                default = f' = <orange>{_.default}</orange>' if _.default != inspect._empty else ''
                 self.print(f'  <blue>{_.name}</blue>: <green>{_.annotation.__name__}</green>{default}')
 
-
-    def help(self, command: CommandName = None) -> None:
+    def help(self, command: CommandName | None = None) -> None:
         """Show command help"""
         if command is None:
             for command in self.COMMANDS:
@@ -418,8 +411,8 @@ class Cli:
 
     def emc(self, dst: FilePath) -> None:
         """Open a file in Emacs"""
-        dst = self._fix_extension(dst)
-        subprocess.Popen(('/usr/bin/emacsclient', dst), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        dst_ = self._fix_extension(dst)
+        subprocess.Popen(('/usr/bin/emacsclient', dst_), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
     ############################################################################
     #
@@ -431,16 +424,16 @@ class Cli:
         self._init()
         if path == '..':
             if not self._current_path.is_root:
-                self._current_path = self._current_path.parent
+                self._current_path = self._current_path.parent  # ty:ignore[invalid-assignment]
         else:
-            if path.startswith('/'):
+            if path.startswith('/'):  # noqa: SIM108
                 _ = self._page_tree.find(path[1:])
             else:
                 _ = self._current_path.find(path)
             if _.is_leaf:
                 self.print(f"<red>Error: </red> <blue>{path}</blue> <red>is not a folder</red>")
             else:
-                self._current_path = _
+                self._current_path = _  # ty:ignore[invalid-assignment]
         self.print(f"<red>moved to</red> <blue>{self._current_path.path}</blue>")
 
     ##############################################
@@ -450,12 +443,12 @@ class Cli:
         self._init()
         if path == '..':
             if not self._current_asset_folder.is_root:
-                self._current_asset_folder = self._current_asset_folder.parent
+                self._current_asset_folder = self._current_asset_folder.parent  # ty:ignore[invalid-assignment]
         else:
             _ = self._current_asset_folder.find(path)
             if _.is_leaf:
                 self.print(f"<red>Error: </red> <blue>{path}</blue> <red>is not a folder</red>")
-            self._current_asset_folder = _
+            self._current_asset_folder = _  # ty:ignore[invalid-assignment]
         self.print(f"<red>moved to</red> <blue>{self._current_asset_folder.path}</blue>")
 
         # try:
@@ -468,6 +461,7 @@ class Cli:
 
     def cwd(self) -> None:
         """Show current working directry"""
+        self._init()
         self.print(f"<blue>Current path</blue> <green>{self._current_path.path}</green>")
         self.print(f"<blue>Current asset path</blue> <green>{self._current_asset_folder}</green>")
 
@@ -478,28 +472,36 @@ class Cli:
 
     # list clashes with list[]
 
-    def pages(self, complete: bool = False) -> None:
+    def pages(self, complete: str = 'False') -> None:
         """List the pages"""
-        complete = self._to_bool(complete)
+        complete_ = self._to_bool(complete)
         for page in self._api.list_pages():
-            if complete:
+            if complete_:
                 # page.complete()
-                self.print(f"<green>{page.path_str:60}</green> <blue>{page.title:40}</blue> {len(page.content):5} @{page.locale} {page.id:3}")
+                self.print(f"<green>{page.path_str:60}</green> <blue>{page.title:40}</blue>"
+                           f" {len(page.content):5} @{page.locale} {page.id:3}")
             else:
-                self.print(f"<green>{page.path_str:60}</green> <blue>{page.title:40}</blue> @{page.locale} {page.id:3}")
+                self.print(f"<green>{page.path_str:60}</green> <blue>{page.title:40}</blue>"
+                           f" @{page.locale} {page.id:3}")
 
     ##############################################
 
     def with_path(self, path: PagePath) -> None:
         """List the pages matching a path pattern"""
         for page in self._api.list_pages():
-            if path in page.path.lower():
+            if path in str(page.path).lower():
                 self.print(f"<green>{page.path:60}</green> <blue>{page.title:40}</blue> @{page.locale} {page.id:3}")
 
     ##############################################
 
     # def with_tags(self, *tags: list[Tag]) -> None:
-    def with_tags(self, tag1: Tag, tag2: Tag = None, tag3: Tag = None, tag4: Tag = None) -> None:
+    def with_tags(
+            self,
+            tag1: Tag,
+            tag2: Tag | None = None,
+            tag3: Tag | None = None,
+            tag4: Tag | None = None,
+    ) -> None:
         """List the pages having those tags"""
         tags = [_ for _ in (tag1, tag2, tag3, tag4) if _]
         for page in self._api.list_page_for_tags(tags):
@@ -521,14 +523,15 @@ class Cli:
     def last(self) -> None:
         """List the last updated pages"""
         for page in self._api.list_pages(order_by='UPDATED', reverse=True, limit=10):
-            self.print(f"<green>{page.path_str:60}</green> <blue>{page.title:40}</blue>{LINESEP}  {page.updated_at}   @{page.locale}   {page.id:3}")
+            self.print(f"<green>{page.path_str:60}</green> <blue>{page.title:40}</blue>{LINESEP}"
+                       f" {page.updated_at}   @{page.locale}   {page.id:3}")
 
     ##############################################
 
     def tree(self, path: PagePath) -> None:
         """Show page tree"""
-        path = self._absolut_path(path)
-        items = list(self._api.tree(path))
+        path_ = self._absolut_path(path)
+        items = list(self._api.tree(path_))
         # items.sort(key=lambda _: _.path)
         items = usorted(items, 'path_str')
         for item in items:
@@ -555,44 +558,49 @@ class Cli:
         # for _ in self._current_path.folder_childs:
         #     self.print(f"  {_.name}")
         for _ in self._current_path.childs:
+            _ = cast(WikiNode, _)  # Fixme
             if _.is_folder:
-                if _.page is not None:
-                    has_page = f' : <orange>{_.page.title}</orange>'
-                else:
-                    has_page = ''
+                has_page = f' : <orange>{_.page.title}</orange>' if _.page is not None else ''
                 self.print(f"  <green>{_.name} /</green>{has_page}")
             else:
-                self.print(f"  <blue>{_.name}</blue> : <orange>{_.page.title}</orange>")
+                self.print(f"  <blue>{_.name}</blue> : <orange>{_.page.title}</orange>")  # ty:ignore[unresolved-attribute]
 
     ############################################################################
     #
     # Page
     #
 
-    def template(self, dst: FilePath, path: PagePath = None, locale: str = 'fr', content_type: str = 'markdown') -> None:
+    def template(
+            self,
+            dst: FilePath,
+            path: PagePath | None = None,
+            locale: str = 'fr',
+            content_type: str = 'markdown',
+    ) -> None:
         """Write a page template"""
-        dst = self._fix_extension(dst)
+        dst_ = self._fix_extension(dst)
+        path_ = path
         if self._current_path:
-            if path is None:
-                path = dst.stem
-            path = self._current_path.join(path)
-            self.print(f"<red>Path is</red> <blue>{path}</blue>")
-        elif path is None:
+            if path_ is None:
+                path_ = dst_.stem
+            path_ = self._current_path.join(path_)
+            self.print(f"<red>Path is</red> <blue>{path_}</blue>")
+        elif path_ is None:
             self.print("<red>path is required</red>")
 
-        if Page.template(dst, locale, path, content_type) is None:
-            self.print(f"<red>Error: file exists</red>")
+        if Page.template(dst_, locale, path_, content_type) is None:
+            self.print("<red>Error: file exists</red>")
         else:
-            self.print(f"<red>Wrote</red>  <blue>{dst}</blue>")
+            self.print(f"<red>Wrote</red>  <blue>{dst_}</blue>")
 
     ##############################################
 
     def create(self, input: FilePath) -> None:
         """Create a new page"""
-        input = self._fix_extension(input)
-        page = Page.read(input, self._api)
+        input_ = self._fix_extension(input)
+        page = Page.read(input_, self._api)
         if page.title is None:
-            self.print(f"<red>Error: missing title</red>")
+            self.print("<red>Error: missing title</red>")
             return
         _ = f"<green>{page.path_str}</green> @{page.locale}{LINESEP}"
         _ += f"  <blue>{page.title}</blue>{LINESEP}"
@@ -602,10 +610,10 @@ class Cli:
 
     ##############################################
 
-    def dump(self, path: PagePath, output: str = None) -> None:
+    def dump(self, path: PagePath, output: str | None = None) -> None:
         """dump a page"""
-        path = self._absolut_path(path)
-        page = self._api.page(path)   # locale=
+        path_ = self._absolut_path(path)
+        page = self._api.page(path_)   # locale=
         # page.complete()
         # Fixme: write dump on stdout
         _ = f"<green>{page.path_str}</green> @{page.locale}{LINESEP}"
@@ -630,8 +638,8 @@ class Cli:
 
     def open(self, path: PagePath, locale: str = 'fr') -> None:
         """Open a page in the browser"""
-        path = self._absolut_path(path)
-        url = f'{self._api.api_url}/{locale}/{path}'
+        path_ = self._absolut_path(path)
+        url = f'{self._api.api_url}/{locale}/{path_}'
         self.print(f"<red>Open</red>  <blue>{url}</blue>")
         subprocess.Popen(('/usr/bin/xdg-open', url), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
@@ -639,8 +647,8 @@ class Cli:
 
     def history(self, path: PagePath) -> None:
         """Show page history"""
-        path = self._absolut_path(path)
-        page = self._api.page(path)   # locale=
+        path_ = self._absolut_path(path)
+        page = self._api.page(path_)   # locale=
         # page.complete()
         history = page.history
         number_of_versions = len(history)
@@ -663,14 +671,14 @@ class Cli:
                 if prev_ph and not page.same_metadata(prev_ph.page_version):
                     # print(page.metadata)
                     # print(prev_ph.page_version.metadata)
-                    action = f'<blue>metadata</blue>'
+                    action = '<blue>metadata</blue>'
                 else:
                     # Fixme: ok ???
                     action = '<orange>ghost</orange>'
-            self.print(f"{number_of_versions-i:4} {ph.date_str} {action}")
+            self.print(f"{number_of_versions - i:4} {ph.date_str} {action}")
             if moved:
                 old_path, new_path = moved
-                self.print(' '*10 + f'<green>{old_path}</green> -> <green>{new_path}</green>')
+                self.print(' ' * 10 + f'<green>{old_path}</green> -> <green>{new_path}</green>')
             # print(f"      {ph.actionType} : {ph.valueBefore} -> {ph.valueAfter}")
             # pv = ph.page_version
             # if pv is not None:
@@ -678,7 +686,7 @@ class Cli:
 
     ##############################################
 
-    def diff(self, input: FilePath = None) -> None:
+    def diff(self, input: FilePath) -> None:
         """Diff a page"""
         file_page = Page.read(input, self._api)
         wiki_page = file_page.reload()
@@ -686,7 +694,7 @@ class Cli:
         self.print(f"<red>Wiki:</red> <blue>{wiki_page.updated_at}</blue>")
         self.print(f"<red>File:</red> <blue>{file_page.updated_at}</blue>")
         for _ in difflib.unified_diff(
-                wiki_page.content.splitlines(),
+                wiki_page.content.splitlines(),  # Fixme: bytes
                 file_page.content.splitlines(),
                 fromfile='wiki',
                 tofile='disk',
@@ -706,7 +714,7 @@ class Cli:
 
     ##############################################
 
-    def update(self, input: FilePath = None) -> None:
+    def update(self, input: FilePath) -> None:
         """Update a page"""
         page = Page.read(input, self._api)
         _ = f"<green>{page.path_str}</green> @{page.locale}{LINESEP}"
@@ -718,43 +726,41 @@ class Cli:
 
     ##############################################
 
-    def movep(self, old_path: PagePath, new_path: PagePath, dryrun: bool = False) -> None:
+    def movep(self, old_path: PagePath, new_path: PagePath, dryrun: str = 'False') -> None:
         """Move the pages that match the path pattern"""
         # <pattern>/... -> <new_pattern>/...
         # relative page -> folder
-        dryrun = self._to_bool(dryrun)
+        dryrun_ = self._to_bool(dryrun)
         # self.print(f"  Move: <green>{old_path}</green> <red>-></red> <blue>{new_path}</blue>")
         for page in self._api.list_pages():
-            path = page.path
+            path = str(page.path)
             if path.startswith(old_path):
                 dest = path.replace(old_path, new_path)
                 self.print(f"  Move page: <green>{path}</green> <red>-></red> <blue>{dest}</blue>")
-                if not dryrun:
+                if not dryrun_:
                     response = page.move(dest)
                     self.print(f"<red>{response.message}</red>")
 
     ##############################################
 
-    def _move_impl(self, path: str, new_path: str, rename: bool = False, dryrun: bool = False) -> None:
+    def _move_impl(self, path: str, new_path: str, rename: bool = False, dryrun: str = 'False') -> None:
         """Move a page"""
-        path = self._absolut_path(path)
-        page = self._api.page(path)   # locale=
-        new_path = self._absolut_path(new_path)
+        path_ = self._absolut_path(path)
+        page = self._api.page(path_)   # locale=
+        new_path_ = self._absolut_path(new_path)
         if not rename:
-            dest = new_path.joinpath(page.path.name)
+            dest = new_path_.joinpath(page.path.name)
         self.print(f"  Move page: <green>{path}</green> <red>-></red> <blue>{dest}</blue>")
-        dryrun = self._to_bool(dryrun)
-        if not dryrun:
+        dryrun_ = self._to_bool(dryrun)
+        if not dryrun_:
             response = page.move(dest)
             self.print(f"<red>{response.message}</red>")
 
-
-    def move(self, path: PagePath, new_path: PageFolder, dryrun: bool = False) -> None:
+    def move(self, path: PagePath, new_path: PageFolder, dryrun: str = 'False') -> None:
         """Move a page"""
-        self._move_impl(path, new_path, dryrun)
+        self._move_impl(path, new_path, dryrun=dryrun)
 
-
-    def rename(self, path: PagePath, new_path: PagePath, dryrun: bool = False) -> None:
+    def rename(self, path: PagePath, new_path: PagePath, dryrun: str = 'False') -> None:
         """Rename a page"""
         self._move_impl(path, new_path, rename=True, dryrun=dryrun)
 
@@ -765,7 +771,7 @@ class Cli:
 
     def tags(self) -> None:
         """List the tags"""
-        for _ in usorted(self._api.tags(), 'tag'):
+        for _ in usorted(self._api.tags(), 'tag'):  # ty:ignore[invalid-argument-type]
             self.print(f'<blue>{_.tag:30}</blue> <green>{_.title}</green>')
 
     ##############################################
@@ -794,14 +800,18 @@ class Cli:
 
     ##############################################
 
-    def asset(self, show_files: bool = True, show_folder_path: bool = False) -> None:
+    def asset(self, show_files: str = 'True', show_folder_path: bool = False) -> None:
         """List the assets"""
-        show_files = self._to_bool(show_files)
-        def show_folder(folder_id: int = 0, indent: int = 0, stack: list = []):
-            indent_str = '  '*indent
-            if show_files:
+        show_files_ = self._to_bool(show_files)
+
+        def show_folder(folder_id: int = 0, indent: int = 0, stack: list | None = None):
+            if stack is None:
+                stack = []
+            indent_str = '  ' * indent
+            if show_files_:
                 for asset in self._api.list_asset(folder_id):
-                    self.print(f"{indent_str}- <blue>{asset.filename}</blue>   {asset.updated_at}   <green>{asset.id}</green>")
+                    self.print(f"{indent_str}- <blue>{asset.filename}</blue>   {asset.updated_at}"
+                               f"   <green>{asset.id}</green>")
                     url = '/'.join([self._api.api_url] + stack + [asset.filename])
                     self.print(f"{indent_str}  {url}")
             for _ in self._api.list_asset_subfolder(folder_id):
@@ -817,7 +827,7 @@ class Cli:
 
     ##############################################
 
-    def upload(self, path: FilePath, name: str = None) -> None:
+    def upload(self, path: FilePath, name: str | None = None) -> None:
         """Upload an asset"""
         if self._current_asset_folder is not None:
             self._current_asset_folder.upload(path, name)
@@ -828,14 +838,14 @@ class Cli:
             for asset in assets:
                 self.print(f'- <blue>{asset.filename}</blue>   {asset.updated_at}')
         else:
-            self.print(f"<red>Error: run cd_asset before</red>")
+            self.print("<red>Error: run cd_asset before</red>")
 
     ############################################################################
     #
     # Sync
     #
 
-    def sync(self, path: Path = None) -> None:
+    def sync(self, path: Path | None = None) -> None:
         """Sync on disk"""
         if path is None:
             path = Path('.', 'sync')
@@ -843,7 +853,7 @@ class Cli:
 
     ##############################################
 
-    def sync_asset(self, path: Path = None) -> None:
+    def sync_asset(self, path: Path | None = None) -> None:
         """Sync assets on disk"""
         if path is None:
             path = Path('.', 'sync_asset')
@@ -851,7 +861,7 @@ class Cli:
 
     ##############################################
 
-    def git_sync(self, path: Path = None) -> None:
+    def git_sync(self, path: Path | None = None) -> None:
         """Sync Git repo"""
         if path is None:
             GIT_SYNC = 'git_sync'
@@ -876,17 +886,14 @@ class Cli:
                 while True:
                     i = line.find('](', start)
                     if i != -1:
-                        start = i+2
+                        start = i + 2
                         j = line.find(')', start)
                         if j != -1:
                             path = line[start:j].strip()
                             if path.startswith('/'):
                                 path = path[1:]
                             _ = path.rfind('.')
-                            if _ != -1:
-                                extension = path[_:]
-                            else:
-                                extension = None
+                            extension = path[_:] if _ != -1 else None
                             if (not re.match('^https?\\://', path)
                                 and extension not in ('.png', '.jpg', '.webp', '.ods', '.pdf')
                                 and path not in page_paths):
