@@ -6,7 +6,7 @@
 #
 ####################################################################################################
 
-__all__ = ['ApiError', 'WikiJsApi', 'WikiNode', 'Page']
+__all__ = ['ApiError', 'AssetFolder', 'WikiJsApi', 'WikiNode', 'Page']
 
 # Fime: use PurePosixPath
 
@@ -45,9 +45,14 @@ LINESEP = os.linesep
 
 # Fixme: how to solve parent childs ???
 class WikiNode(Node):
-    def __init__(self, name: str = '') -> None:
+    def __init__(self, name: str = '', page: type['Page'] | None = None) -> None:
         super().__init__(name)
-        self.page: type['Page'] | None = None
+        self.page: type['Page'] | None = page  # Fixme: ty @Todo
+
+class AssetNode(Node):
+    def __init__(self, name: str = '', asset_folder: type['AssetFolder'] | None = None) -> None:
+        super().__init__(name)
+        self.asset_folder: type['AssetFolder'] | None = asset_folder  # Fixme: ty @Todo
 
 ####################################################################################################
 
@@ -1224,7 +1229,6 @@ class WikiJsApi:
                 except KeyError:
                     # add directory
                     node = WikiNode(_)
-                    node.page = None
                     parent.add_child(node)
                 # print(f'{parent} // {node}')
                 parent = node
@@ -1328,16 +1332,16 @@ class WikiJsApi:
 
     ##############################################
 
-    def build_asset_tree(self) -> WikiNode:
+    def build_asset_tree(self) -> AssetNode:
         # We cannot implement a progress bar since we don't know the number of nodes.
         # A workaround would be to save the number of nodes in a config file.
         # And to use it for the next run.
 
-        root = WikiNode()
+        root = AssetNode()
 
-        def process_folder(parent: WikiNode, folder_id: int) -> None:
+        def process_folder(parent: AssetNode, folder_id: int) -> None:
             for _ in self.list_asset_subfolder(folder_id):
-                node = WikiNode(_.name)
+                node = AssetNode(_.name, _)
                 parent.add_child(node)
                 process_folder(node, _.id)
 

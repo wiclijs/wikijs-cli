@@ -37,7 +37,7 @@ from prompt_toolkit.shortcuts import ProgressBar
 from . import config, sync
 from .printer import STYLE, CommandError, init_console
 from .unicode import usorted_key
-from .WikiJsApi import ApiError, Page, WikiJsApi, WikiNode
+from .WikiJsApi import ApiError, AssetNode, Page, WikiJsApi, WikiNode
 
 ####################################################################################################
 
@@ -245,9 +245,9 @@ class Cli:
         self._completer = CustomCompleter(self, self.COMMANDS)
         # ty: using | Node is a mess
         self._page_tree: WikiNode = None  # ty:ignore[invalid-assignment]
-        self._asset_tree: WikiNode = None  # ty:ignore[invalid-assignment]
         self._current_path: WikiNode = None  # ty:ignore[invalid-assignment]
-        self._current_asset_folder: WikiNode = None  # ty:ignore[invalid-assignment]
+        self._asset_tree: AssetNode = None  # ty:ignore[invalid-assignment]
+        self._current_asset_folder: AssetNode = None  # ty:ignore[invalid-assignment]
         self._console = init_console()
 
     ##############################################
@@ -397,8 +397,8 @@ class Cli:
         """Reset page and folder tree"""
         # Fixme: can be slow
         self._page_tree = self._api.build_page_tree(ProgressBar)
-        self._asset_tree = self._api.build_asset_tree()
         self._current_path = self._page_tree
+        self._asset_tree = self._api.build_asset_tree()
         self._current_asset_folder = self._asset_tree
         # reset current_path ?
 
@@ -830,9 +830,10 @@ class Cli:
     def upload(self, path: FilePath, name: str | None = None) -> None:
         """Upload an asset"""
         if self._current_asset_folder is not None:
-            self._current_asset_folder.upload(path, name)
+            asset_folder = cast(AssetFolder, self._current_asset_folder.asset_folder)  # Fixme: cast
+            asset_folder.upload(path, name)  # ty:ignore[unresolved-attribute] / bug ???
             # lists asset folder
-            assets = list(self._current_asset_folder.list())
+            assets = list(asset_folder.list())  # ty:ignore[unresolved-attribute] / bug ???
             assets.sort(key=lambda _: _.updated_at, reverse=True)
             self.print(f'[blue]{self._current_asset_folder.path}[/]')
             for asset in assets:
