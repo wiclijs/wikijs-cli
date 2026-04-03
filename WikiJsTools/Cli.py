@@ -613,7 +613,7 @@ class Cli:
     def dump(self, path: PagePath, output: str | None = None) -> None:
         """dump a page"""
         path_ = self._absolut_path(path)
-        page = self._api.page(path_)   # locale=
+        page = cast(Page, self._api.page(path_))   # locale=
         # page.complete()
         # Fixme: write dump on stdout
         _ = f"[green]{page.path_str}[/] @{page.locale}{LINESEP}"
@@ -621,8 +621,8 @@ class Cli:
         _ += f"  {page.id}{LINESEP}"
         self.print(_)
         if output:
-            output = page.add_extension(output)
-            if output.exists():
+            output_ = page.add_extension(output)
+            if output_.exists():
                 self.print(f"[red]File exists[/] {output}")
             else:
                 self.print(f"[blue]Write[/] {output}")
@@ -648,7 +648,7 @@ class Cli:
     def history(self, path: PagePath) -> None:
         """Show page history"""
         path_ = self._absolut_path(path)
-        page = self._api.page(path_)   # locale=
+        page = cast(Page, self._api.page(path_))   # locale=
         # page.complete()
         history = page.history
         number_of_versions = len(history)
@@ -677,7 +677,7 @@ class Cli:
                     action = '[orange]ghost[/]'
             self.print(f"{number_of_versions - i:4} {ph.date_str} {action}")
             if moved:
-                old_path, new_path = moved
+                old_path, new_path = cast(tuple[str, str], moved)  # Fixme:_ty Any ???
                 self.print(' ' * 10 + f'[green]{old_path}[/] -> [green]{new_path}[/]')
             # print(f"      {ph.actionType} : {ph.valueBefore} -> {ph.valueAfter}")
             # pv = ph.page_version
@@ -746,7 +746,7 @@ class Cli:
     def _move_impl(self, path: str, new_path: str, rename: bool = False, dryrun: str = 'False') -> None:
         """Move a page"""
         path_ = self._absolut_path(path)
-        page = self._api.page(path_)   # locale=
+        page = cast(Page, self._api.page(path_))   # locale=
         new_path_ = self._absolut_path(new_path)
         if not rename:
             dest = new_path_.joinpath(page.path.name)
