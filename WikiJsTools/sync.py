@@ -213,11 +213,10 @@ def git_sync(api: WikiJsApi, path: Path) -> None:
         is_moved = ph.is_moved
         if is_moved:
             old_upath, new_upath = cast(tuple[str, str], is_moved)
-            printc(f'<blue>moved</blue> @{page.locale} <green>{old_upath}</green> -> <green>{new_upath}</green>')
+            printc(f'<blue>moved</blue> @{page.locale} "<green>{old_upath}</green>" -> "<green>{new_upath}</green>"')
+            # Fixme: f'{ph.date_utc_str} <blue>move</blue> @{page.locale} {ph.old_path} -> {ph.new_path}'
             old_path = page.file_path(repo_path, old_upath)
-            if not old_path.exists():
-                raise CommandError(f"<red>Error <green>{old_upath}</green> is missing</red>")
-            else:
+            if old_path.exists():
                 new_path = page.file_path(repo_path, new_upath)
                 new_path.parent.mkdir(parents=True, exist_ok=True)
                 # Fixme: remove old directory
@@ -227,8 +226,10 @@ def git_sync(api: WikiJsApi, path: Path) -> None:
                 file_path = ph.sync(repo_path, check_exists=False)
                 git_('add', file_path)
                 # Fixme: is move and update possible ???
-                message = f'{ph.date_utc_str} <blue>move</blue> @{page.locale} {ph.old_path} -> {ph.new_path}'
+                message = f'move @{page.locale} "{ph.old_path}" -> "{ph.new_path}"'
                 commit(ph.date, message)
+            else:
+                raise CommandError(f"<red>Error <green>{old_upath}</green> is missing</red>")
         else:
             if ph.is_initial:
                 action = 'create'
