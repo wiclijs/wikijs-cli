@@ -273,7 +273,7 @@ def git_sync(api: WikiJsApi, path: Path) -> None:
                 break
             else:
                 _ = path.relative_to(repo_path)
-                printc(f"[green]{_}[/] <orange>is empty</orange>")
+                printc(f"[green]{_}[/] [orange]is empty[/]")
                 path.rmdir()
                 path = path.parent  # Fixme: ty
 
