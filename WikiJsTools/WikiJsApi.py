@@ -562,6 +562,12 @@ class PageVersion(BasePage):
     def id(self) -> int:
         return self.pageId
 
+    @property
+    def version_date(self) -> datetime:
+        return datetime.fromisoformat(self.versionDate)
+
+    updated_at = version_date
+
     ##############################################
 
     # @property
