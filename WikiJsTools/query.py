@@ -359,7 +359,8 @@ mutation (
 '''
 
 UPDATE_PAGE = '''
-mutation ($id: Int!,
+mutation (
+   $id: Int!,
    $content: String,
    $description: String,
    $editor: String,
