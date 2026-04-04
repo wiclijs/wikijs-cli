@@ -305,7 +305,7 @@ class BasePage(BasePageProtocol):
                 'createdAt',
                 'updatedAt',
 
-                'id', 'pageId',
+                'id',
                 'versionId',
                 'versionDate',
                 'isPublished',
