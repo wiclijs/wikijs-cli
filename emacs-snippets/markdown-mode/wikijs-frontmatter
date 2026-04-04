@@ -1,0 +1,15 @@
+# name: wikijs-frontmatter
+# key: wikijs-frontmatter
+# type: snippet
+# --
+title: ${1:Title}
+locale: fr
+path: `(replace-regexp-in-string ".*-mnt/" "" (file-name-sans-extension buffer-file-name))`
+description:
+tags: [${2:tag}]
+isPublished: True
+isPrivate: False
+privateNS: None
+contentType: markdown
+--------------------------------------------------
+$0
