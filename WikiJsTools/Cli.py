@@ -37,13 +37,14 @@ from prompt_toolkit.shortcuts import ProgressBar
 from . import config, sync
 from .printer import STYLE, CommandError, init_console
 from .unicode import usorted_key
-from .WikiJsApi import ApiError, AssetNode, Page, WikiJsApi, WikiNode
+from .WikiJsApi import ApiError, AssetNode, Page, PageHistory, WikiJsApi, WikiNode
 
 ####################################################################################################
 
 # _module_logger = logging.getLogger('')
 
 LINESEP = os.linesep
+RULE = '\u2500' * 100
 
 # Fixme: ?
 #  from typing import NewType
@@ -628,11 +629,10 @@ class Cli:
                 self.print(f"[blue]Write[/] {output}")
                 page.write(output)
         else:
-            rule = '\u2500' * 100
-            print(rule)
+            print(RULE)
             # print(page.content)
             print(page.export())
-            print(rule)
+            print(RULE)
 
     ##############################################
 
@@ -645,6 +645,37 @@ class Cli:
 
     ##############################################
 
+    def _page_history_action(self, ph: PageHistory) -> str:
+        # {ph.actionType}
+        actions: list[str] = []
+        if ph.is_initial:
+            actions.append('initial')
+        elif ph.is_current:
+            actions.append('current')
+        elif ph.is_edited:
+            actions.append('edited')
+        if ph.is_moved:
+            actions.append('moved')
+        action = ' '.join(actions)
+        if action:
+            action = f'[blue]{action}[/]'
+        else:
+            prev_ph = ph.prev
+            if prev_ph and not ph.page.same_metadata(prev_ph.page_version):
+                # print(page.metadata)
+                # print(prev_ph.page_version.metadata)
+                action = '[blue]metadata[/]'
+            else:
+                # Fixme: ok ???
+                action = '[orange]ghost[/]'
+        return action
+
+    def _page_history_moved(self, ph: PageHistory) -> None:
+        moved = ph.is_moved
+        if moved:
+            old_path, new_path = cast(tuple[str, str], moved)  # Fixme:_ty Any ???
+            self.print(' ' * 10 + f'[green]{old_path}[/] -> [green]{new_path}[/]')
+
     def history(self, path: PagePath) -> None:
         """Show page history"""
         path_ = self._absolut_path(path)
@@ -654,35 +685,32 @@ class Cli:
         number_of_versions = len(history)
         # print(f"{number_of_versions+1:4} {date2str(page.updated_at)}")
         for i, ph in enumerate(history):
-            # {ph.actionType}
-            action = []
-            if ph.is_initial:
-                action.append('initial')
-            elif ph.is_edited:
-                action.append('edited')
-            moved = ph.is_moved
-            if moved:
-                action.append('moved')
-            action = ' '.join(action)
-            if action:
-                action = f'[blue]{action}[/]'
-            else:
-                prev_ph = ph.prev
-                if prev_ph and not page.same_metadata(prev_ph.page_version):
-                    # print(page.metadata)
-                    # print(prev_ph.page_version.metadata)
-                    action = '[blue]metadata[/]'
-                else:
-                    # Fixme: ok ???
-                    action = '[orange]ghost[/]'
+            action = self._page_history_action(ph)
             self.print(f"{number_of_versions - i:4} {ph.date_str} {action}")
-            if moved:
-                old_path, new_path = cast(tuple[str, str], moved)  # Fixme:_ty Any ???
-                self.print(' ' * 10 + f'[green]{old_path}[/] -> [green]{new_path}[/]')
+            self._page_history_moved(ph)
             # print(f"      {ph.actionType} : {ph.valueBefore} -> {ph.valueAfter}")
             # pv = ph.page_version
             # if pv is not None:
             #     print(f"      {pv.action}")
+
+    ##############################################
+
+    def version(self, path: PagePath, index: int) -> None:
+        """Show page version"""
+        path_ = self._absolut_path(path)
+        page = cast(Page, self._api.page(path_))   # locale=
+        history = page.history
+        number_of_versions = len(history)
+        index_ = int(index)
+        if not (1 <= index_ <= number_of_versions):
+            raise ValueError(f"Invalid version index {index}")
+        ph = history[-index_]
+        action = self._page_history_action(ph)
+        self.print(f"{index_} {ph.date_str} {action}")
+        self._page_history_moved(ph)
+        print(RULE)
+        print(ph.export())
+        print(RULE)
 
     ##############################################
 

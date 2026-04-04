@@ -732,6 +732,9 @@ class PageHistory:
     def sync(self, *args, **kwargs) -> Path:
         return self.wrapper.sync(*args, **kwargs)  # ty:ignore[unresolved-attribute, invalid-return-type]
 
+    def export(self) -> str:
+        return self.wrapper.export()  # ty:ignore[unresolved-attribute]
+
 ####################################################################################################
 
 @dataclass
